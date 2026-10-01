@@ -119,6 +119,19 @@ class ProviderAdapter:
                 resp = self._session.post(
                     self._api_url, data=payload, timeout=self._timeout
                 )
+                # Read the body before raise_for_status(): providers return
+                # business errors (bad key, user_inactive, low balance) as 4xx
+                # JSON, and those must surface as-is instead of being masked as
+                # a generic "unreachable" transport failure.
+                if resp.status_code < 500:
+                    try:
+                        body = resp.json()
+                    except ValueError:
+                        body = None
+                    if isinstance(body, dict) and "error" in body:
+                        raise ProviderError(
+                            str(body["error"]), action=action, raw=body
+                        )
                 resp.raise_for_status()
                 data = resp.json()
             except (requests.RequestException, ValueError) as exc:
