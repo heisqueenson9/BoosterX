@@ -32,7 +32,9 @@ def create_app(config_class=Config):
 
     # Initialize extensions
     db.init_app(app)
-    migrate.init_app(app, db)
+    # Migrations live in backend/migrations, not ./migrations (Flask-Migrate default),
+    # so `flask db upgrade` works from the repo root / Docker WORKDIR.
+    migrate.init_app(app, db, directory=os.path.join(os.path.dirname(__file__), "..", "migrations"))
     from backend.app.middleware import limiter
     limiter.init_app(app)
     CORS(app, supports_credentials=True)
