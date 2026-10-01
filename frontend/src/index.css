@@ -317,10 +317,18 @@ dd { margin: 0; color: var(--text); font-weight: 600; text-align: right; }
 .auth-form .card { width: min(430px,100%); padding: 32px; }
 .auth-form .field { margin-top: 15px; }
 .auth-form .btn { margin-top: 18px; }
+ .password-input { position: relative; display: block; }
+.password-input input { padding-right: 44px; }
+.password-toggle { position: absolute; top: 0; right: 0; width: 42px; height: 100%; display: grid; place-items: center; border: 0; border-radius: 0 8px 8px 0; background: transparent; color: var(--muted); cursor: pointer; }
+.password-toggle:hover, .password-toggle:focus-visible { color: var(--text); }
+.password-toggle:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+.field input[aria-invalid="true"] { border-color: #c0392b; }
+.field-error { color: #c0392b; font-weight: 500; }
+.field-hint { display: block; margin-top: 10px; color: var(--muted); }
+.auth-notice { margin: 16px 0 0; }
+.auth-loading { min-height: 100dvh; display: grid; place-items: center; color: var(--muted); background: var(--bg); }
 .auth-switch { text-align: center; color: var(--muted); margin-top: 18px; }
 .auth-switch button { border: 0; background: transparent; text-decoration: underline; font-weight: 600; cursor: pointer; }
-.guest-divider { display: flex; align-items: center; color: var(--faint); gap: 10px; margin: 18px 0 0; }
-.guest-divider::before,.guest-divider::after { content:""; height: 1px; flex: 1; background: var(--border); }
 .auth-mobile-logo { display: none; }
 .drawer-backdrop { display: none; }
 

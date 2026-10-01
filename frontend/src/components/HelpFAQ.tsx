@@ -6,7 +6,7 @@ export function HelpFAQPage() {
     },
     {
       q: "Do I need an account to place an order?",
-      a: "No! BoostX supports full guest checkout. You can place orders and track them using your signed session cookie and Order ID without creating an account. However, creating an account lets you access all past orders from any device."
+      a: "Yes. You need a free BoostX account to place orders. Sign up with your name, email and a password, and all your orders, payments and wallet balance are kept safely under your account so you can reach them from any device."
     },
     {
       q: "How long does delivery take?",

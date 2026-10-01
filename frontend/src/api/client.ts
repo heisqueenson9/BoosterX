@@ -1,9 +1,10 @@
 import type {
-  UserInfo, PlatformItem, ServiceItem, OrderPreviewQuote, OrderDetail, OrderListResponse,
+  UserInfo, AuthResponse, PlatformItem, ServiceItem, OrderPreviewQuote, OrderDetail, OrderListResponse,
   PaymentItem, WalletSummary, LedgerTxItem, AdminOverviewStats, AdminAuditLogItem
 } from "./types";
 
 let csrfToken: string | null = null;
+let unauthorizedHandler: (() => void) | null = null;
 
 export function setCsrfToken(token: string | null) {
   csrfToken = token;
@@ -13,38 +14,60 @@ export function getCsrfToken(): string | null {
   return csrfToken;
 }
 
+/** Called when a signed-in session is rejected (expired/revoked) by the server. */
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler;
+}
+
+// Endpoints where a 401 means "wrong credentials", not "session expired".
+const CREDENTIAL_ENDPOINTS = ["/api/auth/login", "/api/auth/register", "/api/auth/logout"];
+
+function friendlyError(status: number, data: any): string {
+  const serverMessage = typeof data?.error === "string" ? data.error : typeof data?.message === "string" ? data.message : "";
+  if (status >= 500) return "Something went wrong on our side. Please try again in a moment.";
+  if (status === 429) return serverMessage || "Too many attempts. Please wait a minute and try again.";
+  if (serverMessage) return serverMessage;
+  if (status === 401) return "Please sign in to continue.";
+  if (status === 403) return "You don't have permission to do that.";
+  return "The request could not be completed. Please try again.";
+}
+
 async function request<T>(endpoint: string, options: RequestInit = {}, retried = false): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> || {}),
-  };
+  const headers: Record<string, string> = { ...(options.headers as Record<string, string> || {}) };
+  // Let the browser set the multipart boundary for file uploads.
+  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (csrfToken && !headers["X-CSRF-Token"]) {
     headers["X-CSRF-Token"] = csrfToken;
   }
 
-  let response = await fetch(endpoint, {
-    ...options,
-    headers,
-    credentials: "same-origin",
-  });
-
-  // Stale/missing CSRF token (e.g. session cookie expired): refresh once and retry.
-  if (response.status === 403 && !retried && endpoint !== "/api/session") {
-    const body = await response.clone().json().catch(() => ({}));
-    if (typeof body.error === "string" && body.error.includes("CSRF")) {
-      const init = await fetch("/api/session", { method: "POST", credentials: "same-origin" });
-      const initData = await init.json().catch(() => ({}));
-      if (initData.csrf_token) csrfToken = initData.csrf_token;
-      const { ["X-CSRF-Token"]: _drop, ...rest } = (options.headers as Record<string, string>) || {};
-      return request<T>(endpoint, { ...options, headers: rest }, true);
-    }
+  let response: Response;
+  try {
+    response = await fetch(endpoint, { ...options, headers, credentials: "same-origin" });
+  } catch {
+    const err = new Error("Unable to reach the server. Please check your connection and try again.") as any;
+    err.status = 0;
+    throw err;
   }
 
-  const contentType = response.headers.get("content-type") || "";
   let data: any = {};
-  if (contentType.includes("application/json")) {
-    data = await response.json();
+  if ((response.headers.get("content-type") || "").includes("application/json")) {
+    try { data = await response.json(); } catch { data = {}; }
+  }
+
+  // Stale CSRF token (e.g. rotated by a login in another tab): fetch a fresh one once and retry.
+  if (response.status === 403 && !retried && typeof data.error === "string" && data.error.includes("CSRF")) {
+    try {
+      const me = await fetch("/api/auth/me", { credentials: "same-origin" }).then(r => r.json());
+      if (me?.authenticated && me.csrf_token) {
+        csrfToken = me.csrf_token;
+        return request<T>(endpoint, options, true);
+      }
+    } catch { /* fall through to the normal error path */ }
+    csrfToken = null;
+    unauthorizedHandler?.();
   }
 
   if (data.csrf_token) {
@@ -52,10 +75,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}, retried =
   }
 
   if (!response.ok) {
-    const errorMsg = data.error || data.message || `Request failed with status ${response.status}`;
-    const err = new Error(errorMsg) as any;
+    if (response.status === 401 && !CREDENTIAL_ENDPOINTS.includes(endpoint)) {
+      csrfToken = null;
+      unauthorizedHandler?.();
+    }
+    const err = new Error(friendlyError(response.status, data)) as any;
     err.status = response.status;
-    err.details = data.details || data;
     throw err;
   }
 
@@ -64,34 +89,28 @@ async function request<T>(endpoint: string, options: RequestInit = {}, retried =
 
 export const api = {
   // Auth & Session
-  initSession: async (): Promise<{ status: string; csrf_token: string; is_guest: boolean }> => {
-    const res = await request<{ status: string; csrf_token: string; is_guest: boolean }>("/api/session", { method: "POST" });
-    if (res.csrf_token) csrfToken = res.csrf_token;
-    return res;
-  },
-
   getMe: async (): Promise<UserInfo> => {
-    const res = await request<UserInfo>("/api/auth/me");
-    if (res.csrf_token) csrfToken = res.csrf_token;
-    return res;
+    return request<UserInfo>("/api/auth/me");
   },
 
   login: async (identifier: string, password: string) => {
-    return request<{ redirect_path: string; csrf_token: string }>("/api/auth/login", {
+    return request<AuthResponse>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ identifier, password }),
     });
   },
 
-  register: async (data: { username?: string; phone?: string; email?: string; password: string; full_name?: string }) => {
-    return request<{ redirect_path: string; csrf_token: string }>("/api/auth/register", {
+  register: async (data: { email: string; password: string; confirm_password: string; full_name: string }) => {
+    return request<AuthResponse>("/api/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
   logout: async () => {
-    return request<{ message: string }>("/api/auth/logout", { method: "POST" });
+    const res = await request<{ message: string }>("/api/auth/logout", { method: "POST" });
+    csrfToken = null;
+    return res;
   },
 
   // Catalog
@@ -176,24 +195,10 @@ export const api = {
   uploadScreenshot: async (paymentId: string, file: File): Promise<{ payment_id: string; status: string; expected_amount_ghs: string; detected_amount_ghs?: string; recipient?: string; reference?: string; rejection_reason?: string }> => {
     const formData = new FormData();
     formData.append("file", file);
-
-    const headers: Record<string, string> = {};
-    if (csrfToken) {
-      headers["X-CSRF-Token"] = csrfToken;
-    }
-
-    const res = await fetch(`/api/payments/${encodeURIComponent(paymentId)}/screenshot`, {
-      method: "POST",
-      headers,
-      body: formData,
-      credentials: "same-origin",
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || "Upload failed");
-    }
-    return data;
+    return request<{ payment_id: string; status: string; expected_amount_ghs: string; detected_amount_ghs?: string; recipient?: string; reference?: string; rejection_reason?: string }>(
+      `/api/payments/${encodeURIComponent(paymentId)}/screenshot`,
+      { method: "POST", body: formData },
+    );
   },
 
   getPaymentDetail: async (paymentId: string): Promise<PaymentItem> => {

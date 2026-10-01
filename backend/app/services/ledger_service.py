@@ -4,22 +4,19 @@ from sqlalchemy import func
 from backend.app.db import db
 from backend.app.models import LedgerTransaction, LedgerStatus, LedgerType
 
-def get_owner_balance(user_id: Optional[int], session_id: Optional[str]) -> Decimal:
+def get_owner_balance(user_id: Optional[int]) -> Decimal:
     """
-    Computes available balance = posted credits - posted debits - reserved debits.
-    Owner is user_id if set, else session_id.
+    Computes available balance = posted credits - posted debits - reserved debits
+    for the account `user_id`.
     """
-    if not user_id and not session_id:
+    if not user_id:
         return Decimal("0.00")
 
     query = db.session.query(
         func.coalesce(func.sum(LedgerTransaction.amount_ghs), Decimal("0.00"))
     )
 
-    if user_id:
-        filter_clause = (LedgerTransaction.user_id == user_id)
-    else:
-        filter_clause = (LedgerTransaction.session_id == session_id) & (LedgerTransaction.user_id == None)
+    filter_clause = (LedgerTransaction.user_id == user_id)
 
     # 1. Posted credits (payment_credit, refund_credit, admin_adjustment +)
     posted_credits = query.filter(

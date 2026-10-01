@@ -3,8 +3,7 @@ import json
 import click
 from flask.cli import AppGroup
 from backend.app.db import db
-from backend.app.models import User, UserRole, UserStatus, Platform, Service, Setting
-from backend.app.utils.phone import normalize_phone
+from backend.app.models import Platform, Service, Setting
 
 seed_cli = AppGroup("seed")
 
@@ -98,7 +97,7 @@ DEFAULT_MOCK_SERVICES = [
 def register_cli_commands(app):
     @app.cli.command("seed")
     def seed_command():
-        """Seed default platforms, settings, mock services, and initial admin."""
+        """Seed default platforms, settings and (fake-provider mode) mock services."""
         click.echo("Seeding database...")
         
         # 1. Seed platforms
@@ -128,54 +127,9 @@ def register_cli_commands(app):
             db.session.commit()
             click.echo("Default enabled services seeded.")
 
-        # 4. Seed initial admin if specified in ENV or missing
-        admin_email = os.getenv("ADMIN_EMAIL", "admin@boostx.com")
-        admin_password = os.getenv("ADMIN_PASSWORD")
-        if not admin_password:
-            if app.config.get("TESTING") or app.debug:
-                admin_password = "AdminPass123!"
-            else:
-                click.echo("ADMIN_PASSWORD not set; skipping admin creation. Set ADMIN_EMAIL/ADMIN_PASSWORD or run `flask create-admin`.")
+        # The administrator is NOT seeded: it authenticates with the ADMIN_EMAIL /
+        # ADMIN_PASSWORD environment variables (see auth/auth_service.py).
+        if not (app.config.get("ADMIN_EMAIL") and app.config.get("ADMIN_PASSWORD")):
+            click.echo("Warning: ADMIN_EMAIL / ADMIN_PASSWORD are not set; admin login is disabled.")
 
-        admin_user = User.query.filter_by(email=admin_email).first() if admin_password else None
-        if admin_password and not admin_user:
-            admin_user = User(
-                public_user_id=User.new_public_id(UserRole.ADMIN),
-                full_name="Enock Admin",
-                email=admin_email,
-                phone=normalize_phone("0202979378"),
-                password_hash="",
-                role=UserRole.ADMIN,
-                status=UserStatus.ACTIVE
-            )
-            admin_user.set_password(admin_password)
-            db.session.add(admin_user)
-            db.session.commit()
-            click.echo(f"Initial admin created ({admin_email}).")
-        
         click.echo("Seeding complete!")
-
-    @app.cli.command("create-admin")
-    @click.option("--email", prompt="Admin Email", required=True)
-    @click.option("--password", prompt="Admin Password", hide_input=True, confirmation_prompt=True, required=True)
-    @click.option("--name", default="Administrator", help="Admin Full Name")
-    def create_admin_command(email, password, name):
-        """Create an administrator account from CLI."""
-        email_clean = email.strip().lower()
-        if User.query.filter_by(email=email_clean).first():
-            click.echo(f"Error: User with email {email_clean} already exists.")
-            return
-        
-        admin = User(
-            public_user_id=User.new_public_id(UserRole.ADMIN),
-            full_name=name,
-            email=email_clean,
-            phone=None,
-            password_hash="",
-            role=UserRole.ADMIN,
-            status=UserStatus.ACTIVE
-        )
-        admin.set_password(password)
-        db.session.add(admin)
-        db.session.commit()
-        click.echo(f"Admin account created for {email_clean} ({admin.public_user_id}).")

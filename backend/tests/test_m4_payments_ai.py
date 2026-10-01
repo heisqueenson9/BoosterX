@@ -3,7 +3,7 @@ import io
 import pytest
 from PIL import Image
 from backend.app import create_app, db
-from backend.app.models import Payment, PaymentStatus, LedgerTransaction, LedgerType
+from backend.app.models import Payment, PaymentStatus, LedgerTransaction, LedgerType, User
 from backend.app.services.ledger_service import get_owner_balance
 
 @pytest.fixture
@@ -42,8 +42,8 @@ def create_dummy_image_bytes(fmt="PNG"):
     buf.seek(0)
     return buf
 
-def test_create_payment(client):
-    csrf = client.post("/api/session").get_json()["csrf_token"]
+def test_create_payment(client, signup):
+    csrf = signup(client)["X-CSRF-Token"]
     res = client.post("/api/payments", json={
         "amount_ghs": 100.00,
         "network": "Telecel"
@@ -54,10 +54,10 @@ def test_create_payment(client):
     assert data["amount_ghs"] == "100.00"
     assert data["status"] == "Idle"
 
-def test_screenshot_upload_and_verification(client, app):
-    # Establish guest session
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+def test_screenshot_upload_and_verification(client, app, signup):
+    # Create an account (auto-signed-in)
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     # 1. Create Payment
@@ -77,13 +77,13 @@ def test_screenshot_upload_and_verification(client, app):
     # Check ledger balance updated
     with app.app_context():
         payment = Payment.query.filter_by(payment_id=p_id).first()
-        bal = get_owner_balance(None, payment.session_id)
+        bal = get_owner_balance(payment.user_id)
         assert bal == 100.00
 
-def test_underpaid_screenshot_no_credit(client, app):
+def test_underpaid_screenshot_no_credit(client, app, signup):
     # GHS 20 screenshot on GHS 50 expected yields no credit
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     res_p = client.post("/api/payments", json={"amount_ghs": 50.00, "network": "Telecel"}, headers=headers)
@@ -100,19 +100,18 @@ def test_underpaid_screenshot_no_credit(client, app):
 
     with app.app_context():
         payment = Payment.query.filter_by(payment_id=p_id).first()
-        bal = get_owner_balance(None, payment.session_id)
+        bal = get_owner_balance(payment.user_id)
         assert bal == 0.00  # No credit awarded
 
-def test_duplicate_reference_rejection(client, app):
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+def test_duplicate_reference_rejection(client, app, signup):
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     # Manually insert ledger transaction with reference TX_DUPLICATE
     with app.app_context():
         tx = LedgerTransaction(
-            user_id=None,
-            session_id="test_sess",
+            user_id=User.query.filter_by(email="customer@example.com").first().id,
             type=LedgerType.PAYMENT_CREDIT,
             amount_ghs=50.00,
             status="posted",
@@ -137,10 +136,10 @@ def test_duplicate_reference_rejection(client, app):
     assert "Transaction already used" in u_data["rejection_reason"]
 
 
-def test_pdf_upload_rejection(client, app):
+def test_pdf_upload_rejection(client, app, signup):
     """PDF files must be rejected by magic bytes (%PDF) returning HTTP 400 Bad Request."""
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     res_p = client.post("/api/payments", json={"amount_ghs": 100.00, "network": "Telecel"}, headers=headers)
@@ -160,10 +159,10 @@ def test_pdf_upload_rejection(client, app):
         assert payment.status == PaymentStatus.IDLE
 
 
-def test_expired_screenshot_timestamp(client, app):
+def test_expired_screenshot_timestamp(client, app, signup):
     """Screenshot timestamp outside the payment window must be rejected."""
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     res_p = client.post("/api/payments", json={"amount_ghs": 100.00, "network": "Telecel"}, headers=headers)
@@ -179,10 +178,10 @@ def test_expired_screenshot_timestamp(client, app):
     assert "outside the valid payment window" in u_data["rejection_reason"]
 
 
-def test_doctored_screenshot_rejection(client, app):
+def test_doctored_screenshot_rejection(client, app, signup):
     """Screenshots flagged with manipulation or doctored integrity flags must be rejected."""
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     res_p = client.post("/api/payments", json={"amount_ghs": 100.00, "network": "Telecel"}, headers=headers)

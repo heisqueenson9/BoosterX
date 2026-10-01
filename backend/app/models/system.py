@@ -15,7 +15,6 @@ class Notification(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
-    session_id = db.Column(db.String(64), nullable=True, index=True)
     title = db.Column(db.String(150), nullable=False)
     message = db.Column(db.Text, nullable=False)
     read = db.Column(db.Boolean, nullable=False, default=False)

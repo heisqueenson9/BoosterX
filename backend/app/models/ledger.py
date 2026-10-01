@@ -17,7 +17,6 @@ class LedgerTransaction(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
-    session_id = db.Column(db.String(64), nullable=True, index=True)
     type = db.Column(db.String(30), nullable=False)
     amount_ghs = db.Column(db.Numeric(10, 2), nullable=False)
     status = db.Column(db.String(20), nullable=False, default=LedgerStatus.POSTED)

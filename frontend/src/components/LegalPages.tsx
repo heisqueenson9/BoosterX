@@ -14,8 +14,8 @@ export function LegalPage({ type }: { type: string }) {
       title: "Privacy Policy",
       subtitle: "Last updated: September 2026",
       text: [
-        "1. Data Collection: BoostX collects minimal information needed to process orders: payment receipts, target URLs, and session identifier cookies.",
-        "2. Cookie Usage: HttpOnly cookies are used for secure session tracking and guest checkout authentication.",
+        "1. Data Collection: BoostX collects minimal information needed to process orders: payment receipts, target URLs, and your account and session identifier cookies.",
+        "2. Cookie Usage: HttpOnly cookies are used to keep you securely signed in to your account.",
         "3. Third Party Sharing: BoostX does not sell or share customer personal information with external advertising networks.",
         "4. Security: Payment screenshots and transaction data are processed securely using encrypted transport and vision AI engines."
       ]
@@ -34,9 +34,9 @@ export function LegalPage({ type }: { type: string }) {
       title: "Cookie Policy",
       subtitle: "Last updated: September 2026",
       text: [
-        "1. Essential Cookies: We use essential HttpOnly cookies to keep you signed in and maintain your guest checkout session.",
+        "1. Essential Cookies: We use essential HttpOnly cookies to keep you signed in to your account.",
         "2. CSRF Security: Secure anti-CSRF token cookies are used to prevent cross-site request forgery attacks.",
-        "3. Managing Cookies: You can clear cookies through your browser settings, though this will reset any unlinked guest session."
+        "3. Managing Cookies: You can clear cookies through your browser settings, though you will be signed out and need to log in again."
       ]
     },
     security: {

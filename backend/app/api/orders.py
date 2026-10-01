@@ -1,8 +1,8 @@
 from decimal import Decimal
-from flask import Blueprint, jsonify, request, current_app, make_response
+from flask import Blueprint, jsonify, request
 from backend.app.db import db
 from backend.app.models import Order, OrderStatus, OrderEvent, LedgerTransaction, LedgerStatus, LedgerType, Payment, PaymentStatus, Refill, Service, Notification
-from backend.app.auth.session import get_current_user, get_or_create_guest_session, hash_token
+from backend.app.auth.session import require_user
 from backend.app.orders.order_service import create_and_submit_order, refund_order, OrderExecutionError
 from backend.app.services.ledger_service import get_owner_balance
 from backend.app.providers.factory import get_provider_client
@@ -12,18 +12,12 @@ from backend.app.middleware import limiter
 orders_bp = Blueprint("orders", __name__, url_prefix="/api")
 
 
-def _resolve_caller_identity():
-    user = get_current_user()
-    if user:
-        return user.id, None, None
-    raw_cookie = request.cookies.get(current_app.config["GUEST_COOKIE_NAME"])
-    new_cookie = None
-    if not raw_cookie:
-        raw_cookie, session_id_hash = get_or_create_guest_session()
-        new_cookie = raw_cookie
-    else:
-        session_id_hash = hash_token(raw_cookie)
-    return None, session_id_hash, new_cookie
+def _get_owned_order(user, public_id: str):
+    """The order if it exists AND belongs to `user`; otherwise None (callers answer 404)."""
+    order = Order.query.filter_by(public_order_id=public_id).first()
+    if not order or order.user_id != user.id:
+        return None
+    return order
 
 def _serialize_order(order: Order, include_events: bool = False) -> dict:
     start_c = order.start_count if order.start_count is not None else 0
@@ -86,12 +80,11 @@ def create_order_endpoint():
     except (ValueError, TypeError):
         return jsonify({"error": "Invalid service_id or quantity"}), 400
 
-    user_id, session_id_hash, new_cookie = _resolve_caller_identity()
+    user = require_user()
 
     try:
         order = create_and_submit_order(
-            user_id=user_id,
-            session_id=session_id_hash,
+            user_id=user.id,
             service_id=service_id,
             target=target,
             quantity=quantity,
@@ -103,48 +96,24 @@ def create_order_endpoint():
             payload["details"] = exc.details
         return jsonify(payload), exc.code
 
-    resp = make_response(jsonify({"order": _serialize_order(order, include_events=True)}), 201)
-    if new_cookie:
-        resp.set_cookie(
-            current_app.config["GUEST_COOKIE_NAME"],
-            new_cookie,
-            httponly=True,
-            samesite="Lax",
-            secure=current_app.config.get("SESSION_COOKIE_SECURE", False)
-        )
-    return resp
+    return jsonify({"order": _serialize_order(order, include_events=True)}), 201
 
 
 @orders_bp.get("/orders/<public_id>")
 @limiter.limit("60 per minute")
 def get_order_detail(public_id: str):
-    order = Order.query.filter_by(public_order_id=public_id).first()
+    user = require_user()
+    order = _get_owned_order(user, public_id)
     if not order:
         return jsonify({"error": "Order not found"}), 404
 
-    user_id, session_id_hash, _ = _resolve_caller_identity()
-
-    # Ownership check: if caller possesses cookie or is owner, show full details
-    # Otherwise if public track request, limit target string for privacy
-    is_owner = False
-    if user_id and order.user_id == user_id:
-        is_owner = True
-    elif not user_id and session_id_hash and order.session_id == session_id_hash:
-        is_owner = True
-
-    serialized = _serialize_order(order, include_events=is_owner)
-    if not is_owner:
-        # Sanitize target if tracking publicly
-        t = order.target
-        if len(t) > 6:
-            serialized["target"] = t[:3] + "..." + t[-3:]
-
-    return jsonify({"order": serialized}), 200
+    return jsonify({"order": _serialize_order(order, include_events=True)}), 200
 
 
 @orders_bp.get("/orders/<public_id>/status")
 def get_order_status(public_id: str):
-    order = Order.query.filter_by(public_order_id=public_id).first()
+    user = require_user()
+    order = _get_owned_order(user, public_id)
     if not order:
         return jsonify({"error": "Order not found"}), 404
 
@@ -170,12 +139,9 @@ def get_order_status(public_id: str):
 
 @orders_bp.post("/orders/<public_id>/refill")
 def request_order_refill(public_id: str):
-    order = Order.query.filter_by(public_order_id=public_id).first()
+    user = require_user()
+    order = _get_owned_order(user, public_id)
     if not order:
-        return jsonify({"error": "Order not found"}), 404
-
-    user_id, session_id_hash, _ = _resolve_caller_identity()
-    if (user_id and order.user_id != user_id) or (not user_id and order.session_id != session_id_hash):
         return jsonify({"error": "Order not found"}), 404
 
     if not order.provider_order_id:
@@ -208,12 +174,9 @@ def request_order_refill(public_id: str):
 
 @orders_bp.post("/orders/<public_id>/cancel")
 def request_order_cancel(public_id: str):
-    order = Order.query.filter_by(public_order_id=public_id).first()
+    user = require_user()
+    order = _get_owned_order(user, public_id)
     if not order:
-        return jsonify({"error": "Order not found"}), 404
-
-    user_id, session_id_hash, _ = _resolve_caller_identity()
-    if (user_id and order.user_id != user_id) or (not user_id and order.session_id != session_id_hash):
         return jsonify({"error": "Order not found"}), 404
 
     if order.status in (OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.REFUNDED, OrderStatus.FAILED):
@@ -238,14 +201,8 @@ def request_order_cancel(public_id: str):
 
 @orders_bp.get("/account/orders")
 def list_account_orders():
-    user_id, session_id_hash, _ = _resolve_caller_identity()
-
-    if user_id:
-        query = Order.query.filter_by(user_id=user_id)
-    elif session_id_hash:
-        query = Order.query.filter_by(session_id=session_id_hash, user_id=None)
-    else:
-        return jsonify({"orders": [], "total": 0, "page": 1, "per_page": 20}), 200
+    user = require_user()
+    query = Order.query.filter_by(user_id=user.id)
 
     search_q = request.args.get("search")
     if search_q:
@@ -280,41 +237,21 @@ def list_account_orders():
 
 @orders_bp.get("/account/wallet")
 def get_account_wallet():
-    user_id, session_id_hash, _ = _resolve_caller_identity()
+    user = require_user()
 
-    avail_bal = get_owner_balance(user_id, session_id_hash)
+    avail_bal = get_owner_balance(user.id)
 
-    # Calculate total spent (posted order debits)
-    if user_id:
-        spent_query = db.session.query(db.func.sum(LedgerTransaction.amount_ghs)).filter(
-            LedgerTransaction.user_id == user_id,
-            LedgerTransaction.type == LedgerType.ORDER_DEBIT,
-            LedgerTransaction.status == LedgerStatus.POSTED
-        )
-        dep_query = db.session.query(db.func.sum(Payment.amount_ghs)).filter(
-            Payment.user_id == user_id,
-            Payment.status == PaymentStatus.VERIFIED
-        )
-    elif session_id_hash:
-        spent_query = db.session.query(db.func.sum(LedgerTransaction.amount_ghs)).filter(
-            LedgerTransaction.session_id == session_id_hash,
-            LedgerTransaction.user_id == None,
-            LedgerTransaction.type == LedgerType.ORDER_DEBIT,
-            LedgerTransaction.status == LedgerStatus.POSTED
-        )
-        dep_query = db.session.query(db.func.sum(Payment.amount_ghs)).filter(
-            Payment.session_id == session_id_hash,
-            Payment.user_id == None,
-            Payment.status == PaymentStatus.VERIFIED
-        )
-    else:
-        spent_query = None
-        dep_query = None
-
-    total_spent = spent_query.scalar() if spent_query else 0
+    total_spent = db.session.query(db.func.sum(LedgerTransaction.amount_ghs)).filter(
+        LedgerTransaction.user_id == user.id,
+        LedgerTransaction.type == LedgerType.ORDER_DEBIT,
+        LedgerTransaction.status == LedgerStatus.POSTED
+    ).scalar()
     total_spent_val = Decimal(str(total_spent or 0))
 
-    total_dep = dep_query.scalar() if dep_query else 0
+    total_dep = db.session.query(db.func.sum(Payment.amount_ghs)).filter(
+        Payment.user_id == user.id,
+        Payment.status == PaymentStatus.VERIFIED
+    ).scalar()
     total_dep_val = Decimal(str(total_dep or 0))
 
     return jsonify({
@@ -326,14 +263,8 @@ def get_account_wallet():
 
 @orders_bp.get("/account/transactions")
 def list_account_transactions():
-    user_id, session_id_hash, _ = _resolve_caller_identity()
-
-    if user_id:
-        query = LedgerTransaction.query.filter_by(user_id=user_id)
-    elif session_id_hash:
-        query = LedgerTransaction.query.filter_by(session_id=session_id_hash, user_id=None)
-    else:
-        return jsonify({"transactions": [], "total": 0, "page": 1, "per_page": 20}), 200
+    user = require_user()
+    query = LedgerTransaction.query.filter_by(user_id=user.id)
 
     try:
         page = max(1, int(request.args.get("page", 1)))
@@ -365,14 +296,8 @@ def list_account_transactions():
 
 @orders_bp.get("/notifications")
 def list_notifications():
-    user_id, session_id_hash, _ = _resolve_caller_identity()
-
-    if user_id:
-        notifs = Notification.query.filter_by(user_id=user_id).order_by(Notification.id.desc()).all()
-    elif session_id_hash:
-        notifs = Notification.query.filter_by(session_id=session_id_hash, user_id=None).order_by(Notification.id.desc()).all()
-    else:
-        notifs = []
+    user = require_user()
+    notifs = Notification.query.filter_by(user_id=user.id).order_by(Notification.id.desc()).all()
 
     return jsonify({
         "notifications": [{
@@ -387,13 +312,10 @@ def list_notifications():
 
 @orders_bp.post("/notifications/<int:notif_id>/read")
 def mark_notification_read(notif_id: int):
-    user_id, session_id_hash, _ = _resolve_caller_identity()
+    user = require_user()
 
     notif = db.session.get(Notification, notif_id)
-    if not notif:
-        return jsonify({"error": "Notification not found"}), 404
-
-    if (user_id and notif.user_id != user_id) or (not user_id and notif.session_id != session_id_hash):
+    if not notif or notif.user_id != user.id:
         return jsonify({"error": "Notification not found"}), 404
 
     notif.read = True

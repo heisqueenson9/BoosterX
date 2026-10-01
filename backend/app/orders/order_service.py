@@ -4,7 +4,7 @@ import logging
 from typing import Optional, Tuple
 from flask import current_app
 from backend.app.db import db
-from backend.app.models import Order, OrderStatus, OrderEvent, Service, Platform, LedgerTransaction, LedgerStatus, LedgerType, User, GuestSession, Notification, Setting, Refund, Refill
+from backend.app.models import Order, OrderStatus, OrderEvent, Service, Platform, LedgerTransaction, LedgerStatus, LedgerType, User, Notification, Setting, Refund, Refill
 from backend.app.pricing.pricing_service import PricingService, PricingSettings, PricingError
 from backend.app.services.ledger_service import get_owner_balance
 from backend.app.providers.factory import get_provider_client
@@ -28,16 +28,13 @@ def get_pricing_engine() -> PricingService:
     settings = PricingSettings(usd_to_ghs_rate=usd_rate, flat_markup_ghs=flat_markup)
     return PricingService(settings)
 
-def create_and_submit_order(*, user_id: Optional[int], session_id: Optional[str], service_id: int, target: str, quantity: int, idempotency_key: Optional[str] = None) -> Order:
+def create_and_submit_order(*, user_id: int, service_id: int, target: str, quantity: int, idempotency_key: Optional[str] = None) -> Order:
     """
     Implements the 7-step order execution algorithm per spec Section 11 & Prompt Section 7.
     """
     # Check Idempotency Key first
     if idempotency_key:
-        if user_id:
-            existing_order = Order.query.filter_by(user_id=user_id, idempotency_key=idempotency_key).first()
-        else:
-            existing_order = Order.query.filter_by(session_id=session_id, idempotency_key=idempotency_key, user_id=None).first()
+        existing_order = Order.query.filter_by(user_id=user_id, idempotency_key=idempotency_key).first()
         if existing_order:
             logger.info(f"Idempotent order request matched existing order {existing_order.public_order_id}")
             return existing_order
@@ -74,12 +71,9 @@ def create_and_submit_order(*, user_id: Optional[int], session_id: Optional[str]
 
     # Step 3: TX1 - Lock Owner, Reserve Balance, Create Pending Order
     with db.session.begin_nested():
-        if user_id:
-            db.session.query(User).filter_by(id=user_id).with_for_update().first()
-        elif session_id:
-            db.session.query(GuestSession).filter_by(session_id_hash=session_id).with_for_update().first()
+        db.session.query(User).filter_by(id=user_id).with_for_update().first()
 
-        available_balance = get_owner_balance(user_id, session_id)
+        available_balance = get_owner_balance(user_id)
         if available_balance < charge_ghs:
             raise OrderExecutionError(
                 "Insufficient wallet balance to place this order.",
@@ -93,7 +87,6 @@ def create_and_submit_order(*, user_id: Optional[int], session_id: Optional[str]
         order = Order(
             public_order_id=Order.new_public_id(),
             user_id=user_id,
-            session_id=session_id,
             idempotency_key=idempotency_key,
             platform=service.platform,
             service_id=service.id,
@@ -111,7 +104,6 @@ def create_and_submit_order(*, user_id: Optional[int], session_id: Optional[str]
         # Reserve order debit
         ledger_debit = LedgerTransaction(
             user_id=user_id,
-            session_id=session_id,
             type=LedgerType.ORDER_DEBIT,
             amount_ghs=charge_ghs,
             status=LedgerStatus.RESERVED,
@@ -167,7 +159,6 @@ def create_and_submit_order(*, user_id: Optional[int], session_id: Optional[str]
 
         db.session.add(Notification(
             user_id=ord_obj.user_id,
-            session_id=ord_obj.session_id,
             title="Order Processing",
             message=f"Order {ord_obj.public_order_id} for {ord_obj.platform} {ord_obj.service_name} is now processing."
         ))
@@ -235,16 +226,10 @@ def refund_order(order: Order, refund_type: str, reason: str) -> Decimal:
         return Decimal("0.00")
 
     with db.session.begin_nested():
-        if order.user_id:
-            db.session.query(User).filter_by(id=order.user_id).with_for_update().first()
-            user_id = order.user_id
-            session_id = None
-        else:
-            db.session.query(GuestSession).filter_by(session_id_hash=order.session_id).with_for_update().first()
-            user_id = None
-            session_id = order.session_id
+        user_id = order.user_id
+        db.session.query(User).filter_by(id=user_id).with_for_update().first()
 
-        bal_before = get_owner_balance(user_id, session_id)
+        bal_before = get_owner_balance(user_id)
         bal_after = bal_before + refund_amount
 
         ref_record = Refund(
@@ -256,7 +241,6 @@ def refund_order(order: Order, refund_type: str, reason: str) -> Decimal:
 
         ledger_refund = LedgerTransaction(
             user_id=user_id,
-            session_id=session_id,
             type=LedgerType.REFUND_CREDIT,
             amount_ghs=refund_amount,
             status=LedgerStatus.POSTED,

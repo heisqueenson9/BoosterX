@@ -17,7 +17,6 @@ class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     public_order_id = db.Column(db.String(32), unique=True, nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
-    session_id = db.Column(db.String(64), nullable=True, index=True)
     idempotency_key = db.Column(db.String(64), nullable=True, index=True)
     platform = db.Column(db.String(30), nullable=False)
     service_id = db.Column(db.Integer, nullable=False)

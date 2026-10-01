@@ -15,7 +15,6 @@ from backend.app.orders.order_service import refund_order
 from backend.app.providers.factory import get_provider_client
 from backend.app.providers.provider_client import ProviderError
 from backend.app.workers.sync_services import sync_services_worker
-from backend.app.utils.phone import normalize_phone
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 
@@ -151,7 +150,10 @@ def manual_verify_payment(payment_id: str):
     if existing_tx and existing_tx.payment_id != payment.id:
         return jsonify({"error": f"Transaction reference '{ref_input}' already used in ledger"}), 400
 
-    bal_before = get_owner_balance(payment.user_id, payment.session_id)
+    if not payment.user_id:
+        return jsonify({"error": "This payment has no owning account and cannot be credited"}), 400
+
+    bal_before = get_owner_balance(payment.user_id)
     bal_after = bal_before + Decimal(str(payment.amount_ghs))
 
     old_status = payment.status
@@ -161,7 +163,6 @@ def manual_verify_payment(payment_id: str):
     # Insert posted credit
     tx = LedgerTransaction(
         user_id=payment.user_id,
-        session_id=payment.session_id,
         type=LedgerType.PAYMENT_CREDIT,
         amount_ghs=payment.amount_ghs,
         status=LedgerStatus.POSTED,
@@ -433,7 +434,7 @@ def list_users_admin():
 
     items = []
     for u in users:
-        bal = get_owner_balance(u.id, None)
+        bal = get_owner_balance(u.id)
         items.append({
             "id": u.id,
             "public_user_id": u.public_user_id,
@@ -460,6 +461,9 @@ def update_user_admin(user_id: int):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
+
+    if user.role == UserRole.ADMIN:
+        return jsonify({"error": "Administrator accounts are managed through server configuration"}), 403
 
     data = request.get_json(silent=True) or {}
     old_status = user.status
@@ -492,7 +496,6 @@ def list_all_transactions_admin():
         "transactions": [{
             "id": t.id,
             "user_id": t.user_id,
-            "session_id": t.session_id,
             "type": t.type,
             "amount_ghs": f"{t.amount_ghs:.2f}",
             "status": t.status,
@@ -624,47 +627,3 @@ def list_audit_logs():
         "page": page,
         "per_page": per_page
     }), 200
-
-
-@admin_bp.post("/admins")
-def create_admin_account():
-    data = request.get_json(silent=True) or {}
-    identifier = data.get("email") or data.get("username")
-    full_name = data.get("full_name") or data.get("name") or data.get("username") or "Administrator"
-    phone = data.get("phone")
-    password = data.get("password")
-
-    if not identifier or not password:
-        return jsonify({"error": "email/username and password are required"}), 400
-
-    norm_phone = None
-    if phone:
-        try:
-            norm_phone = normalize_phone(phone)
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-    email = identifier.strip().lower() if "@" in identifier else f"{identifier.strip()}@boostx.gh"
-
-    if User.query.filter_by(email=email).first():
-        return jsonify({"error": "Admin account with this email/username already exists"}), 400
-
-    if norm_phone and User.query.filter_by(phone=norm_phone).first():
-        return jsonify({"error": "Phone number is already registered"}), 400
-
-    admin_user = User(
-        public_user_id=User.new_public_id(UserRole.ADMIN),
-        full_name=full_name.strip(),
-        email=email,
-        phone=norm_phone,
-        role=UserRole.ADMIN,
-        status=UserStatus.ACTIVE
-    )
-    admin_user.set_password(password)
-    db.session.add(admin_user)
-    db.session.flush()
-
-    _log_admin_action("CREATE_ADMIN", "user", admin_user.id, new_val=admin_user.email)
-    db.session.commit()
-
-    return jsonify({"message": f"Admin account '{email}' created successfully", "public_user_id": admin_user.public_user_id}), 201

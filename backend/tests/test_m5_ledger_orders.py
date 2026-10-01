@@ -48,10 +48,10 @@ def create_dummy_image_bytes(fmt="PNG"):
     buf.seek(0)
     return buf
 
-def test_order_insufficient_balance(client):
+def test_order_insufficient_balance(client, signup):
     # Establish session
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     # Attempt to place order with 0 balance
@@ -65,10 +65,10 @@ def test_order_insufficient_balance(client):
     assert "Insufficient wallet balance" in data["error"]
 
 
-def test_order_creation_success_and_idempotency(client, app):
+def test_order_creation_success_and_idempotency(client, app, signup):
     # 1. Establish session & upload payment screenshot to get balance
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     res_p = client.post("/api/payments", json={"amount_ghs": 100.00, "network": "Telecel"}, headers=headers)
@@ -119,9 +119,9 @@ def test_order_creation_success_and_idempotency(client, app):
     assert float(w_data["total_spent"]) > 0.00
 
 
-def test_order_cancel_and_refund(client, app):
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+def test_order_cancel_and_refund(client, app, signup):
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     res_p = client.post("/api/payments", json={"amount_ghs": 100.00, "network": "Telecel"}, headers=headers)
@@ -156,9 +156,9 @@ def test_order_cancel_and_refund(client, app):
     assert res_w.get_json()["available_balance"] == "100.00"
 
 
-def test_order_worker_partial_refund(client, app):
-    res_s = client.post("/api/session")
-    csrf_tok = res_s.get_json()["csrf_token"]
+def test_order_worker_partial_refund(client, app, signup):
+    headers = signup(client)
+    csrf_tok = headers["X-CSRF-Token"]
     headers = {"X-CSRF-Token": csrf_tok}
 
     res_p = client.post("/api/payments", json={"amount_ghs": 100.00, "network": "Telecel"}, headers=headers)

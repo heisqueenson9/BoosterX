@@ -1,10 +1,13 @@
 import os
 import sys
+from datetime import timedelta
 from decimal import Decimal
+
+INSECURE_DEFAULT_SECRET_KEY = "boostx-secret-key-change-in-production"
 
 class Config:
     TESTING = os.getenv("TESTING", "false").lower() in ("true", "1") or "pytest" in sys.modules
-    SECRET_KEY = os.getenv("SECRET_KEY", "boostx-secret-key-change-in-production")
+    SECRET_KEY = os.getenv("SECRET_KEY", INSECURE_DEFAULT_SECRET_KEY)
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
         f"sqlite:///{os.path.join(os.path.dirname(os.path.dirname(__file__)), 'boostx.db')}"
@@ -32,10 +35,25 @@ class Config:
     DEFAULT_USD_TO_GHS = Decimal(os.getenv("USD_TO_GHS_RATE", os.getenv("DEFAULT_USD_TO_GHS", "10.70")))
     DEFAULT_FLAT_MARKUP_GHS = Decimal(os.getenv("FLAT_MARKUP_GHS", os.getenv("DEFAULT_FLAT_MARKUP_GHS", "5.00")))
     
-    # Session & Claiming Settings
+    # Session settings. Authentication is a signed, HttpOnly cookie session.
     SESSION_COOKIE_NAME = "boostx_session"
-    GUEST_COOKIE_NAME = "boostx_guest"
-    CLAIM_BY_CONTACT_ENABLED = os.getenv("CLAIM_BY_CONTACT_ENABLED", "false").lower() == "true"
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    # Secure cookies by default in production (HTTPS); override with SESSION_COOKIE_SECURE.
+    SESSION_COOKIE_SECURE = os.getenv(
+        "SESSION_COOKIE_SECURE", "true" if os.getenv("FLASK_ENV") == "production" else "false"
+    ).lower() in ("true", "1")
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=int(os.getenv("SESSION_LIFETIME_HOURS", "168")))
+
+    # Administrator credentials. The admin is authenticated ONLY against these
+    # server-side environment variables (never stored in source or sent to the
+    # frontend). If either is unset, admin login is disabled.
+    ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
+    # Browser cross-origin access is disabled by default (the SPA is served by
+    # this app). Set CORS_ORIGINS="https://a.example,https://b.example" to enable.
+    CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
     
     # Storage Settings
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads"))

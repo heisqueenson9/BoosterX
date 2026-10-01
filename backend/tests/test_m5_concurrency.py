@@ -8,7 +8,7 @@ from PIL import Image
 
 from backend.app import create_app, db
 from backend.app.models import (
-    User, Payment, PaymentStatus, LedgerTransaction, LedgerStatus, LedgerType,
+    User, UserRole, UserStatus, Payment, PaymentStatus, LedgerTransaction, LedgerStatus, LedgerType,
     Order, OrderStatus, Service, Platform
 )
 from backend.app.services.ledger_service import get_owner_balance
@@ -25,9 +25,15 @@ class PostgresTestConfig(Config):
     SECRET_KEY = "test-secret-key-concurrency"
     PROVIDER_MODE = "fake"
 
-def add_credit(session_id=None, user_id=None, amount="50.00", ref="INIT-CREDIT"):
+def make_user(tag):
+    user = User(public_user_id=f"BX-USR-{tag[:8].upper()}", email=f"{tag}@example.com", password_hash="x",
+                role=UserRole.CUSTOMER, status=UserStatus.ACTIVE, full_name=tag)
+    db.session.add(user)
+    db.session.commit()
+    return user.id
+
+def add_credit(user_id, amount="50.00", ref="INIT-CREDIT"):
     tx = LedgerTransaction(
-        session_id=session_id,
         user_id=user_id,
         type=LedgerType.PAYMENT_CREDIT,
         status=LedgerStatus.POSTED,
@@ -63,10 +69,10 @@ def test_postgres_concurrency_double_order(pg_app):
     one fails with insufficient balance, and final balance is exactly GHS 10 (never negative).
     """
     with pg_app.app_context():
-        session_id = "test_concurrent_sess_1"
-        add_credit(session_id=session_id, amount="50.00", ref="INIT-CREDIT-50")
+        owner_id = make_user("test_concurrent_sess_1")
+        add_credit(owner_id, amount="50.00", ref="INIT-CREDIT-50")
         
-        initial_bal = get_owner_balance(user_id=None, session_id=session_id)
+        initial_bal = get_owner_balance(owner_id)
         assert initial_bal == Decimal("50.00")
 
         # Ensure platform TikTok & service 1 active
@@ -89,8 +95,7 @@ def test_postgres_concurrency_double_order(pg_app):
                         service_id=1,
                         target="https://tiktok.com/@concurrency_user",
                         quantity=1000,
-                        session_id=session_id,
-                        user_id=None,
+                        user_id=owner_id,
                         idempotency_key=f"idem-key-thread-{thread_id}"
                     )
                     results.append(order)
@@ -114,7 +119,7 @@ def test_postgres_concurrency_double_order(pg_app):
         assert "Insufficient wallet balance" in str(errors[0])
 
         # Final Balance Check: Balance is GHS 10.00 (50 - 40), never negative
-        final_bal = get_owner_balance(user_id=None, session_id=session_id)
+        final_bal = get_owner_balance(owner_id)
         assert final_bal >= Decimal("0.00")
         assert final_bal == Decimal("10.00")
 
@@ -125,11 +130,11 @@ def test_underpaid_screenshot_no_credit(pg_app):
     from datetime import datetime, timedelta
     from backend.app.ai.payment_ai import PaymentAIExtraction
     with pg_app.app_context():
-        session_id = "test_underpaid_sess"
+        owner_id = make_user("test_underpaid_sess")
         now = datetime.utcnow()
         pay = Payment(
             payment_id="PAY-UNDERPAID-1",
-            session_id=session_id,
+            user_id=owner_id,
             network="Telecel",
             amount_ghs=Decimal("50.00"),
             status=PaymentStatus.VERIFYING,
@@ -150,7 +155,7 @@ def test_underpaid_screenshot_no_credit(pg_app):
 
         updated_pay = db.session.get(Payment, pay.id)
         assert updated_pay.status in (PaymentStatus.REJECTED, PaymentStatus.REVIEW_REQUIRED)
-        bal = get_owner_balance(user_id=None, session_id=session_id)
+        bal = get_owner_balance(owner_id)
         assert bal == Decimal("0.00")
 
 def test_duplicate_reference_rejection(pg_app):
@@ -160,13 +165,13 @@ def test_duplicate_reference_rejection(pg_app):
     from datetime import datetime, timedelta
     from backend.app.ai.payment_ai import PaymentAIExtraction
     with pg_app.app_context():
-        session_id = "test_dup_ref_sess"
+        owner_id = make_user("test_dup_ref_sess")
         now = datetime.utcnow()
         
         # Payment 1 verified with reference TX-DUP-100
         pay1 = Payment(
             payment_id="PAY-DUP-1",
-            session_id=session_id,
+            user_id=owner_id,
             network="Telecel",
             amount_ghs=Decimal("50.00"),
             status=PaymentStatus.VERIFYING,
@@ -186,12 +191,12 @@ def test_duplicate_reference_rejection(pg_app):
         )
         process_payment_verification(pay1, extracted_data_1)
         assert db.session.get(Payment, pay1.id).status == PaymentStatus.VERIFIED
-        assert get_owner_balance(user_id=None, session_id=session_id) == Decimal("50.00")
+        assert get_owner_balance(owner_id) == Decimal("50.00")
 
         # Payment 2 attempts to use SAME reference TX-DUP-100
         pay2 = Payment(
             payment_id="PAY-DUP-2",
-            session_id=session_id,
+            user_id=owner_id,
             network="Telecel",
             amount_ghs=Decimal("50.00"),
             status=PaymentStatus.VERIFYING,
@@ -212,16 +217,16 @@ def test_duplicate_reference_rejection(pg_app):
         process_payment_verification(pay2, extracted_data_2)
 
         assert db.session.get(Payment, pay2.id).status == PaymentStatus.REJECTED
-        assert get_owner_balance(user_id=None, session_id=session_id) == Decimal("50.00")
+        assert get_owner_balance(owner_id) == Decimal("50.00")
 
 def test_provider_failure_restores_balance_to_full(pg_app):
     """
     Spec §17 Case C: Provider failure after reservation returns balance to exactly GHS 50, not GHS 20.
     """
     with pg_app.app_context():
-        session_id = "test_prov_fail_sess"
-        add_credit(session_id=session_id, amount="50.00", ref="INIT-CREDIT-PROV-FAIL")
-        assert get_owner_balance(user_id=None, session_id=session_id) == Decimal("50.00")
+        owner_id = make_user("test_prov_fail_sess")
+        add_credit(owner_id, amount="50.00", ref="INIT-CREDIT-PROV-FAIL")
+        assert get_owner_balance(owner_id) == Decimal("50.00")
 
         plat = Platform.query.filter_by(name="TikTok").first()
         if plat:
@@ -241,10 +246,9 @@ def test_provider_failure_restores_balance_to_full(pg_app):
                 service_id=1,
                 target="https://tiktok.com/@private_user",
                 quantity=1000,
-                session_id=session_id,
-                user_id=None
+                user_id=owner_id,
             )
         assert "Provider submission failed" in str(exc_info.value)
 
-        bal = get_owner_balance(user_id=None, session_id=session_id)
+        bal = get_owner_balance(owner_id)
         assert bal == Decimal("50.00")

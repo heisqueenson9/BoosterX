@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, lazy, Suspense, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, lazy, Suspense, type ReactNode } from "react";
 import logo from "./imports/boosterx-logo-rocket.svg";
-import { api, setCsrfToken } from "./api/client";
+import { api, setUnauthorizedHandler } from "./api/client";
 import type { OrderDetail, ServiceItem, PaymentItem, WalletSummary, LedgerTxItem, UserInfo } from "./api/types";
 import { TrackOrderPage } from "./components/TrackOrder";
 import { HelpFAQPage } from "./components/HelpFAQ";
@@ -11,7 +11,7 @@ type IconName =
   | "home" | "plus" | "orders" | "services" | "wallet" | "transactions"
   | "support" | "user" | "settings" | "search" | "bell" | "sun"
   | "moon" | "menu" | "close" | "arrow" | "copy" | "logout" | "check"
-  | "clock" | "eye" | "users" | "chart" | "card" | "shield";
+  | "clock" | "eye" | "eye-off" | "users" | "chart" | "card" | "shield";
 
 const paths: Record<IconName, ReactNode> = {
   home: <><path d="m3 10 9-7 9 7"/><path d="M5 9v11h14V9M9 20v-6h6v6"/></>,
@@ -35,6 +35,7 @@ const paths: Record<IconName, ReactNode> = {
   check: <path d="m5 12 4 4L19 6"/>,
   clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
   eye: <><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></>,
+  "eye-off": <><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.7A17.4 17.4 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4.1-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></>,
   users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></>,
   chart: <><path d="M4 19V9M10 19V5M16 19v-7M22 19V2"/><path d="M2 19h22"/></>,
   card: <><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></>,
@@ -56,8 +57,21 @@ export function Button({ children, variant = "primary", icon, onClick, type = "b
   return <button type={type} disabled={disabled} onClick={onClick} className={`btn ${variant} ${full ? "full" : ""}`}>{icon && <Icon name={icon} />}{children}</button>;
 }
 
-export function Field({ label, placeholder, value, type = "text", onChange }: { label?: string; placeholder?: string; value?: string; type?: string; onChange?: (value: string) => void }) {
-  return <label className="field">{label && <span>{label}</span>}<input type={type} placeholder={placeholder} value={value || ""} onChange={(e) => onChange?.(e.target.value)} /></label>;
+export function Field({ label, placeholder, value, type = "text", onChange, autoComplete, error, disabled }: { label?: string; placeholder?: string; value?: string; type?: string; onChange?: (value: string) => void; autoComplete?: string; error?: string; disabled?: boolean }) {
+  const id = useId();
+  return <div className="field">{label && <label htmlFor={id}>{label}</label>}<input id={id} type={type} placeholder={placeholder} value={value || ""} autoComplete={autoComplete} disabled={disabled} aria-invalid={error ? true : undefined} onChange={(e) => onChange?.(e.target.value)} />{error && <small className="field-error" role="alert">{error}</small>}</div>;
+}
+
+export function PasswordField({ label, value, onChange, autoComplete, error, disabled, placeholder }: { label: string; value: string; onChange: (value: string) => void; autoComplete: string; error?: string; disabled?: boolean; placeholder?: string }) {
+  const id = useId();
+  const [visible, setVisible] = useState(false);
+  const toggleLabel = visible ? "Hide password" : "Show password";
+  return <div className="field"><label htmlFor={id}>{label}</label>
+    <div className="password-input">
+      <input id={id} type={visible ? "text" : "password"} value={value} placeholder={placeholder} autoComplete={autoComplete} disabled={disabled} aria-invalid={error ? true : undefined} onChange={(e) => onChange(e.target.value)} />
+      <button type="button" className="password-toggle" onClick={() => setVisible(v => !v)} aria-label={toggleLabel} aria-pressed={visible} title={toggleLabel}><Icon name={visible ? "eye-off" : "eye"} /></button>
+    </div>
+    {error && <small className="field-error" role="alert">{error}</small>}</div>;
 }
 
 export function SelectField({ label, value, children, onChange }: { label?: string; value?: string; children: ReactNode; onChange?: (value: string) => void }) {
@@ -103,7 +117,7 @@ function Dashboard({ go, user }: { go: (page: string) => void; user: UserInfo | 
     ["Wallet Balance", `GHS ${wallet.available_balance}`, "Available to spend", "wallet"],
   ] as const;
 
-  const displayName = user?.full_name || (user?.email ? user.email.split("@")[0] : "Guest");
+  const displayName = user?.full_name || (user?.email ? user.email.split("@")[0] : "there");
 
   return <><PageTitle title={`Welcome back, ${displayName}`} description="Manage your orders and social media growth from one place." action={<Button icon="plus" onClick={() => go("new-order")}>Create New Order</Button>} />
     <div className="stats">{stats.map(([label, value, note, icon]) => <Card className="stat" key={label}><div className="stat-head"><span>{label}</span><span className="icon-tile"><Icon name={icon} /></span></div><strong>{value}</strong><small>{note}</small></Card>)}</div>
@@ -212,7 +226,7 @@ function NewOrder({ go }: { go: (page: string) => void }) {
         </dl>
         <div className="total"><span>Total</span><strong>GHS {total}</strong></div>
         <Button full icon="arrow" disabled={!quantity || submitting} onClick={handlePlaceOrder}>{submitting ? "Placing Order..." : "Place Order"}</Button>
-        <small className="secure"><Icon name="shield" size={14}/> Secure guest checkout. No account required.</small>
+        <small className="secure"><Icon name="shield" size={14}/> Secure checkout, paid from your BoostX wallet.</small>
       </Card>
     </div>
     {placedOrder && <div className="modal-backdrop"><div className="modal"><button className="modal-close" onClick={() => setPlacedOrder(null)}><Icon name="close"/></button><span className="success-icon"><Icon name="check" size={28}/></span><h2>Order created</h2><p>Your order <strong>{placedOrder.public_order_id}</strong> is ready for payment. Pay the exact amount and upload your receipt.</p><div className="receipt-total"><span>Amount due</span><strong>GHS {placedOrder.charge_ghs}</strong></div><Button full onClick={() => go("payment")}>Continue to payment</Button><Button full variant="ghost" onClick={() => setPlacedOrder(null)}>Pay later</Button></div></div>}
@@ -377,7 +391,7 @@ function Support() {
 
 function Profile({ user }: { user: UserInfo | null }) {
   return <><PageTitle title="Profile" description="Manage your personal information." />
-    <Card><div className="profile-head"><div><h2>{user?.full_name || user?.email || "Guest User"}</h2><p>{user?.email || user?.phone || "Guest Session"}</p><Status>{user?.authenticated ? "Registered Account" : "Guest Checkout Session"}</Status></div></div></Card>
+    <Card><div className="profile-head"><div><h2>{user?.full_name || user?.email}</h2><p>{user?.email || user?.phone}</p><Status>Registered Account</Status></div></div></Card>
   </>;
 }
 
@@ -385,45 +399,71 @@ function Settings({ dark, setDark }: { dark: boolean; setDark: (v: boolean) => v
   return <><PageTitle title="Settings" description="Control your account preferences and security." /><Card><span className="eyebrow">Appearance</span><h2>Choose your theme</h2><div className="theme-cards"><button className={!dark ? "selected" : ""} onClick={() => setDark(false)}><span><Icon name="sun"/>Light mode</span></button><button className={dark ? "selected" : ""} onClick={() => setDark(true)}><span><Icon name="moon"/>Dark mode</span></button></div></Card></>;
 }
 
-function Auth({ mode, go, onAuthed }: { mode: "login" | "register"; go: (page: string) => void; onAuthed: (user: UserInfo) => void }) {
-  const [identifier, setIdentifier] = useState("");
-  const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+type AuthFormValues = { fullName: string; identifier: string; password: string; confirmPassword: string };
+
+function validateAuthForm(mode: "login" | "register", v: AuthFormValues): Partial<Record<keyof AuthFormValues, string>> {
+  const errors: Partial<Record<keyof AuthFormValues, string>> = {};
+  if (mode === "login") {
+    if (!v.identifier.trim()) errors.identifier = "Enter your email or phone number.";
+    if (!v.password) errors.password = "Enter your password.";
+    return errors;
+  }
+  if (v.fullName.trim().length < 2) errors.fullName = "Enter your full name.";
+  if (!v.identifier.trim()) errors.identifier = "Enter your email address.";
+  else if (!EMAIL_RE.test(v.identifier.trim())) errors.identifier = "Enter a valid email address.";
+  if (v.password.length < 8) errors.password = "Password must be at least 8 characters.";
+  else if (/^\d+$/.test(v.password) || /^[A-Za-z]+$/.test(v.password)) errors.password = "Password must mix letters and numbers.";
+  if (!v.confirmPassword) errors.confirmPassword = "Confirm your password.";
+  else if (v.confirmPassword !== v.password) errors.confirmPassword = "Passwords do not match.";
+  return errors;
+}
+
+function Auth({ mode, go, onAuthed, notice }: { mode: "login" | "register"; go: (page: string) => void; onAuthed: (user: UserInfo) => void; notice?: string }) {
+  const [values, setValues] = useState<AuthFormValues>({ fullName: "", identifier: "", password: "", confirmPassword: "" });
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof AuthFormValues, string>>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const set = (key: keyof AuthFormValues) => (value: string) => setValues(prev => ({ ...prev, [key]: value }));
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+    const errors = validateAuthForm(mode, values);
+    setFieldErrors(errors);
     setError("");
+    if (Object.keys(errors).length > 0) return;
+
     setLoading(true);
     try {
-      const res = mode === "login"
-        ? await api.login(identifier, password)
-        : await api.register({ email: identifier, password, full_name: fullName });
-      // Load the freshly authenticated user before navigating, otherwise the
-      // app keeps rendering the stale guest state from the initial /auth/me.
-      const me = await api.getMe();
-      onAuthed(me);
-      go(me.role === "admin" || res.redirect_path === "/admin" ? "admin" : "dashboard");
+      const user = mode === "login"
+        ? await api.login(values.identifier.trim(), values.password)
+        : await api.register({ email: values.identifier.trim(), password: values.password, confirm_password: values.confirmPassword, full_name: values.fullName.trim() });
+      // The signed-in user comes straight from the server response; the route
+      // guard in <App> then sends them to the right place for their role.
+      onAuthed(user);
     } catch (err: any) {
-      setError(err.message || "Authentication failed.");
-    } finally {
+      setError(err.message || "Authentication failed. Please try again.");
       setLoading(false);
     }
   };
 
   return <div className="auth-page"><div className="auth-brand"><img src={logo} alt="BoostX"/><div><span className="eyebrow">Social growth, simplified</span><h1>Build momentum.<br/>Reach more people.</h1></div></div>
     <div className="auth-form"><Card>
-      <h2>{mode === "login" ? "Sign in to BoostX" : "Start growing with BoostX"}</h2>
-      <form onSubmit={handleSubmit}>
-        {mode === "register" && <Field label="Full name" value={fullName} onChange={setFullName}/>}
-        <Field label="Email or phone" value={identifier} onChange={setIdentifier}/>
-        <Field label="Password" type="password" value={password} onChange={setPassword}/>
-        {error && <div className="payment-warning" style={{ margin: "1rem 0" }}><strong>{error}</strong></div>}
-        <Button full type="submit" disabled={loading}>{loading ? "Processing..." : mode === "login" ? "Sign in" : "Create account"}</Button>
+      <h2>{mode === "login" ? "Sign in to BoostX" : "Create your BoostX account"}</h2>
+      {notice && mode === "login" && <div className="payment-warning auth-notice" role="status"><strong>{notice}</strong></div>}
+      <form onSubmit={handleSubmit} noValidate>
+        {mode === "register" && <Field label="Full name" value={values.fullName} onChange={set("fullName")} autoComplete="name" error={fieldErrors.fullName} disabled={loading}/>}
+        <Field label={mode === "login" ? "Email or phone" : "Email address"} type={mode === "login" ? "text" : "email"} value={values.identifier} onChange={set("identifier")} autoComplete={mode === "login" ? "username" : "email"} error={fieldErrors.identifier} disabled={loading}/>
+        <PasswordField label="Password" value={values.password} onChange={set("password")} autoComplete={mode === "login" ? "current-password" : "new-password"} error={fieldErrors.password} disabled={loading}/>
+        {mode === "register" && <PasswordField label="Confirm password" value={values.confirmPassword} onChange={set("confirmPassword")} autoComplete="new-password" error={fieldErrors.confirmPassword} disabled={loading}/>}
+        {mode === "register" && <small className="field-hint">At least 8 characters, with letters and numbers.</small>}
+        {error && <div className="payment-warning" role="alert" style={{ margin: "1rem 0" }}><strong>{error}</strong></div>}
+        <Button full type="submit" disabled={loading}>{loading ? (mode === "login" ? "Signing in..." : "Creating account...") : mode === "login" ? "Sign in" : "Create account"}</Button>
       </form>
-      <div className="auth-switch">{mode === "login" ? "New to BoostX?" : "Already have an account?"}<button onClick={() => go(mode === "login" ? "register" : "login")}>{mode === "login" ? "Create an account" : "Sign in"}</button></div>
-      <Button full variant="secondary" onClick={() => go("new-order")}>Continue as guest</Button>
+      <div className="auth-switch">{mode === "login" ? "New to BoostX?" : "Already have an account?"}<button type="button" onClick={() => go(mode === "login" ? "register" : "login")}>{mode === "login" ? "Create an account" : "Sign in"}</button></div>
     </Card></div>
   </div>;
 }
@@ -431,21 +471,30 @@ function Auth({ mode, go, onAuthed }: { mode: "login" | "register"; go: (page: s
 const adminNavGroups = [
   { label: "Admin Core", links: [["admin", "Overview", "chart"], ["admin-payments", "Payments", "card"], ["admin-orders", "Orders", "orders"], ["admin-services", "Services", "services"], ["admin-platforms", "Platforms", "shield"]] },
   { label: "System Config", links: [["admin-pricing", "Pricing", "wallet"], ["admin-health", "System Health", "shield"], ["admin-audit", "Audit Logs", "clock"]] },
-  { label: "Storefront", links: [["dashboard", "Main Storefront", "home"]] },
 ] as const;
 
-function Shell({ page, go, children, dark, setDark, user, onLoggedOut }: { page: string; go: (page: string) => void; children: ReactNode; dark: boolean; setDark: (v: boolean) => void; user: UserInfo | null; onLoggedOut: () => void }) {
+function Shell({ page, go, children, dark, setDark, user, onLoggedOut }: { page: string; go: (page: string) => void; children: ReactNode; dark: boolean; setDark: (v: boolean) => void; user: UserInfo; onLoggedOut: () => void }) {
   const [open, setOpen] = useState(false);
+  const isAdmin = user.role === "admin";
   const handleLogout = async () => {
-    await api.logout().catch(() => {});
+    try {
+      await api.logout();
+    } catch (err: any) {
+      // 401 means the session is already gone. Anything else (network/server)
+      // means the server session may still be valid, so don't pretend we signed out.
+      if (err?.status !== 401) {
+        alert("We couldn't sign you out. Please check your connection and try again.");
+        return;
+      }
+    }
     onLoggedOut();
     go("login");
   };
 
-  const activeGroups = page.startsWith("admin") ? adminNavGroups : navGroups;
+  const activeGroups = isAdmin ? adminNavGroups : navGroups;
 
-  return <div className="app-shell" data-admin={page.startsWith("admin") ? "true" : undefined}><aside className={open ? "open" : ""}><div className="sidebar-logo"><img src={logo} alt="BoostX"/><button onClick={() => setOpen(false)}><Icon name="close"/></button></div><nav>{activeGroups.map(g => <div className="nav-group" key={g.label}><span>{g.label}</span>{g.links.map(([id,label,icon]) => <button className={page === id ? "active" : ""} onClick={() => { go(id); setOpen(false); }} key={id}><Icon name={icon as IconName}/>{label}</button>)}</div>)}</nav><div className="sidebar-bottom"><button onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"}/>{dark ? "Light mode" : "Dark mode"}</button>{user?.authenticated && <button onClick={handleLogout}><Icon name="logout"/>Log out</button>}</div></aside>{open && <button className="drawer-backdrop" onClick={() => setOpen(false)} aria-label="Close menu"/>}
-    <div className="main"><header><button className="mobile-menu" onClick={() => setOpen(true)}><Icon name="menu"/></button><div className="top-search"><Icon name="search"/><input placeholder="Search orders, services..."/></div><div className="top-actions"><button className="user-menu" onClick={() => go(user?.authenticated ? "profile" : "login")}><span className="avatar">{user?.full_name ? user.full_name.substring(0, 2).toUpperCase() : "BX"}</span><span><strong>{user?.full_name || "Guest"}</strong><small>{user?.role || "Customer"}</small></span></button></div></header><main>{children}</main></div>
+  return <div className="app-shell" data-admin={isAdmin ? "true" : undefined}><aside className={open ? "open" : ""}><div className="sidebar-logo"><img src={logo} alt="BoostX"/><button onClick={() => setOpen(false)}><Icon name="close"/></button></div><nav>{activeGroups.map(g => <div className="nav-group" key={g.label}><span>{g.label}</span>{g.links.map(([id,label,icon]) => <button className={page === id ? "active" : ""} onClick={() => { go(id); setOpen(false); }} key={id}><Icon name={icon as IconName}/>{label}</button>)}</div>)}</nav><div className="sidebar-bottom"><button onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"}/>{dark ? "Light mode" : "Dark mode"}</button><button onClick={handleLogout}><Icon name="logout"/>Log out</button></div></aside>{open && <button className="drawer-backdrop" onClick={() => setOpen(false)} aria-label="Close menu"/>}
+    <div className="main"><header><button className="mobile-menu" onClick={() => setOpen(true)}><Icon name="menu"/></button><div className="top-search"><Icon name="search"/><input placeholder="Search orders, services..."/></div><div className="top-actions"><button className="user-menu" onClick={() => go(isAdmin ? "admin" : "profile")}><span className="avatar">{(user.full_name || user.email || "BX").substring(0, 2).toUpperCase()}</span><span><strong>{user.full_name || user.email}</strong><small>{isAdmin ? "Administrator" : "Customer"}</small></span></button></div></header><main>{children}</main></div>
   </div>;
 }
 
@@ -462,6 +511,8 @@ export default function App() {
   const initial = location.hash.replace("#/", "").split("?")[0] || "dashboard";
   const [page, setPage] = useState(initial);
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [sessionNotice, setSessionNotice] = useState("");
   const [dark, setDarkState] = useState(() => localStorage.getItem("boostx-theme") === "dark");
 
   const setDark = (value: boolean) => { setDarkState(value); localStorage.setItem("boostx-theme", value ? "dark" : "light"); };
@@ -470,10 +521,20 @@ export default function App() {
     document.documentElement.dataset.theme = dark ? "dark" : "light";
   }, [dark]);
 
+  // Establish who is signed in from the server (the source of truth) before
+  // rendering anything, so a refresh never shows or hides the wrong screens.
   useEffect(() => {
-    api.initSession().then(() => {
-      api.getMe().then(setUser).catch(() => {});
-    }).catch(() => {});
+    let cancelled = false;
+    api.getMe()
+      .then(me => { if (!cancelled) setUser(me.authenticated ? me : null); })
+      .catch(() => { if (!cancelled) setUser(null); })
+      .finally(() => { if (!cancelled) setAuthReady(true); });
+    // The server rejected a signed-in session (expired or revoked): drop to login.
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      setSessionNotice("Your session has expired. Please sign in again.");
+    });
+    return () => { cancelled = true; setUnauthorizedHandler(null); };
   }, []);
 
   useEffect(() => {
@@ -488,8 +549,27 @@ export default function App() {
     scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Route guard. Unauthenticated visitors can only ever reach login/register;
+  // admins only the admin area; customers everything except it. (The backend
+  // enforces the same rules - this only decides what to render and where to send people.)
+  const isAdmin = user?.role === "admin";
+  let current: string | null;
+  if (!authReady) current = null;
+  else if (!user) current = page === "register" ? "register" : "login";
+  else if (page === "login" || page === "register") current = isAdmin ? "admin" : "dashboard";
+  else if (isAdmin && !page.startsWith("admin")) current = "admin";
+  else if (!isAdmin && page.startsWith("admin")) current = "dashboard";
+  else current = page;
+
+  useEffect(() => {
+    if (current && current !== page) {
+      history.replaceState(null, "", `#/${current}`);
+      setPage(current);
+    }
+  }, [current, page]);
+
   const screen = useMemo(() => {
-    switch (page) {
+    switch (current) {
       case "dashboard": return <Dashboard go={go} user={user} />;
       case "new-order": return <NewOrder go={go} />;
       case "orders": return <Orders go={go} />;
@@ -504,31 +584,35 @@ export default function App() {
       case "track": return <TrackOrderPage go={go} />;
       case "help": return <HelpFAQPage />;
       case "terms": case "privacy": case "refunds": case "cookies": case "security": case "disclaimer":
-        return <LegalPage type={page} />;
+        return <LegalPage type={current} />;
       case "404": return <NotFoundPage go={go} />;
       default: return <Dashboard go={go} user={user} />;
     }
-  }, [page, dark, user]);
+  }, [current, dark, user]);
 
-  if (page === "login" || page === "register") return <Auth mode={page} go={go} onAuthed={setUser}/>;
+  if (!authReady || !current) return <div className="auth-loading" role="status">Loading...</div>;
+
+  if (!user) {
+    return <Auth key={current} mode={current === "register" ? "register" : "login"} go={go} notice={sessionNotice} onAuthed={(u) => { setSessionNotice(""); setUser(u); }} />;
+  }
 
   let content: ReactNode = screen;
 
-  if (page.startsWith("admin")) {
+  if (isAdmin) {
     content = (
       <Suspense fallback={<Card><p>Loading admin panel...</p></Card>}>
-        {page === "admin" && <AdminDashboard go={go} />}
-        {page === "admin-payments" && <AdminPayments go={go} />}
-        {page === "admin-payment-review" && <AdminPaymentReview go={go} />}
-        {page === "admin-orders" && <AdminOrders />}
-        {page === "admin-services" && <AdminServices />}
-        {page === "admin-platforms" && <AdminPlatforms />}
-        {page.startsWith("admin-") && !["admin-payments","admin-payment-review","admin-orders","admin-services","admin-platforms"].includes(page) && (
-          <AdminConfigPage type={page.replace("admin-", "")} />
+        {current === "admin" && <AdminDashboard go={go} />}
+        {current === "admin-payments" && <AdminPayments go={go} />}
+        {current === "admin-payment-review" && <AdminPaymentReview go={go} />}
+        {current === "admin-orders" && <AdminOrders />}
+        {current === "admin-services" && <AdminServices />}
+        {current === "admin-platforms" && <AdminPlatforms />}
+        {current.startsWith("admin-") && !["admin-payments","admin-payment-review","admin-orders","admin-services","admin-platforms"].includes(current) && (
+          <AdminConfigPage type={current.replace("admin-", "")} />
         )}
       </Suspense>
     );
   }
 
-  return <Shell page={page} go={go} dark={dark} setDark={setDark} user={user} onLoggedOut={() => { setUser(null); api.initSession().then(() => api.getMe().then(setUser)).catch(() => {}); }}>{content}</Shell>;
+  return <Shell page={current} go={go} dark={dark} setDark={setDark} user={user} onLoggedOut={() => { setSessionNotice(""); setUser(null); }}>{content}</Shell>;
 }

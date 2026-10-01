@@ -8,7 +8,6 @@ class SupportTicket(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ticket_id = db.Column(db.String(32), unique=True, nullable=False, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
-    session_id = db.Column(db.String(64), nullable=True, index=True)
     subject = db.Column(db.String(200), nullable=False)
     order_id_ref = db.Column(db.String(50), nullable=True)
     category = db.Column(db.String(50), nullable=False, default="Orders & delivery")

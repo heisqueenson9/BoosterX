@@ -4,7 +4,7 @@ import json
 import re
 from flask import current_app
 from backend.app.db import db
-from backend.app.models import Payment, PaymentStatus, PaymentVerification, LedgerTransaction, LedgerStatus, LedgerType, Setting, User, GuestSession, Notification
+from backend.app.models import Payment, PaymentStatus, PaymentVerification, LedgerTransaction, LedgerStatus, LedgerType, Setting, User, Notification
 from backend.app.ai.payment_ai import PaymentAIExtraction
 from backend.app.utils.phone import normalize_phone
 from backend.app.services.ledger_service import get_owner_balance
@@ -223,17 +223,13 @@ def _apply_verified_credit(payment: Payment, ai_result: PaymentAIExtraction, pas
 
     with db.session.begin_nested():
         # Lock owner row
-        if payment.user_id:
-            db.session.query(User).filter_by(id=payment.user_id).with_for_update().first()
-            user_id = payment.user_id
-            session_id = None
-        else:
-            db.session.query(GuestSession).filter_by(session_id_hash=payment.session_id).with_for_update().first()
-            user_id = None
-            session_id = payment.session_id
+        if not payment.user_id:
+            raise ValueError(f"Payment {payment.payment_id} has no owning account and cannot be credited.")
+        user_id = payment.user_id
+        db.session.query(User).filter_by(id=user_id).with_for_update().first()
 
         # Calculate balance before
-        balance_before = get_owner_balance(user_id, session_id)
+        balance_before = get_owner_balance(user_id)
         credit_amount = Decimal(str(payment.amount_ghs))
         balance_after = balance_before + credit_amount
 
@@ -244,7 +240,6 @@ def _apply_verified_credit(payment: Payment, ai_result: PaymentAIExtraction, pas
         # Create Ledger Transaction (posted)
         ledger = LedgerTransaction(
             user_id=user_id,
-            session_id=session_id,
             type=LedgerType.PAYMENT_CREDIT,
             amount_ghs=credit_amount,
             status=LedgerStatus.POSTED,
@@ -261,7 +256,6 @@ def _apply_verified_credit(payment: Payment, ai_result: PaymentAIExtraction, pas
         # Create Notification
         notif = Notification(
             user_id=user_id,
-            session_id=session_id,
             title="Payment Verified",
             message=f"Your payment of GHS {credit_amount:.2f} has been verified and credited to your wallet."
         )

@@ -1,53 +1,51 @@
 """
 auth_service.py — BoostX authentication.
 
-Core design decision (per Enock's instruction):
+Two kinds of account, one login endpoint:
 
-    Customers and admins log in on the SAME page, through the SAME
-    endpoint, with the SAME form. Nothing in the request or the response
-    copy reveals that an admin path exists. The only place role is ever
-    decided is server-side, by looking up the account's `role` column
-    after the password check succeeds.
+  * Customers register through the public sign-up flow (register_customer),
+    which can ONLY ever create a UserRole.CUSTOMER account, and log in with the
+    password stored (hashed) in the database.
 
-Three rules make that safe:
+  * The administrator logs in with the credentials configured in the server
+    environment (ADMIN_EMAIL / ADMIN_PASSWORD). Those credentials are compared
+    server-side in constant time and are never stored in the database, sent to
+    the frontend, or returned by any API. On a successful admin login a database
+    row with role "admin" is provisioned (it is needed as the owner of audit-log
+    entries) but its password is a random, unknown value, so that row can never
+    be authenticated through the customer password path.
 
-  1. Registration (`register_customer`) can ONLY ever create a
-     UserRole.CUSTOMER account. There is no public parameter, header, or
-     trick that produces an admin account through this path.
-  2. Admin accounts are created exclusively by `create_admin_account`,
-     which is never wired to a public route — only to a seed script or an
-     internal endpoint that itself requires an already-authenticated
-     admin session.
-  3. `authenticate()` returns the SAME generic error for "no such
-     account" and "wrong password" — this stops the login page being used
-     to enumerate which emails/phones have accounts (an attacker
-     targeting the admin login shouldn't be able to tell whether they
-     guessed a real admin email).
+Failure messages are deliberately generic so the login form can't be used to
+discover which emails/phones have accounts.
 """
 
 from __future__ import annotations
 
+import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Protocol
+from typing import Iterable, Optional, Protocol
+
+from werkzeug.security import check_password_hash
 
 from backend.app.models import User, UserRole, UserStatus
-from .models import validate_identifier, validate_password_policy
+from .models import validate_full_name, validate_identifier, validate_password_policy
 
 LOCKOUT_THRESHOLD = 5          # failed attempts before a temporary lock
 LOCKOUT_DURATION = timedelta(minutes=15)
 GENERIC_LOGIN_ERROR = "Incorrect email/phone or password."
+ACCOUNT_EXISTS_ERROR = "An account with those details already exists."
+
+# A real (but meaningless) hash, verified when no account matches so response
+# time doesn't reveal whether an identifier exists.
+_DUMMY_HASH = "pbkdf2:sha256:600000$dummysalt$" + "0" * 64
 
 
 class AuthError(Exception):
     """Safe to show to the end user as-is."""
 
 
-# --------------------------------------------------------------------- #
-# Storage boundary — swap InMemoryUserRepository for a real one backed
-# by PostgreSQL (e.g. SQLAlchemy) without touching AuthService itself.
-# --------------------------------------------------------------------- #
 class UserRepository(Protocol):
     def get_by_identifier(self, identifier: str) -> Optional[User]: ...
     def get_by_id(self, user_id: int) -> Optional[User]: ...
@@ -55,38 +53,9 @@ class UserRepository(Protocol):
     def exists(self, identifier: str) -> bool: ...
 
 
-class InMemoryUserRepository:
-    """Reference implementation for tests/demos — not for production."""
-
-    def __init__(self) -> None:
-        self._by_id: dict[int, User] = {}
-        self._next_id = 1
-
-    def get_by_identifier(self, identifier: str) -> Optional[User]:
-        identifier = identifier.strip().lower()
-        for user in self._by_id.values():
-            if (user.email and user.email.lower() == identifier) or (user.phone == identifier):
-                return user
-        return None
-
-    def get_by_id(self, user_id: int) -> Optional[User]:
-        return self._by_id.get(user_id)
-
-    def exists(self, identifier: str) -> bool:
-        return self.get_by_identifier(identifier) is not None
-
-    def save(self, user: User) -> User:
-        if user.id is None or user.id == 0:
-            user.id = self._next_id
-            self._next_id += 1
-        self._by_id[user.id] = user
-        return user
-
-
 @dataclass(frozen=True)
 class AuthResult:
     user: User
-    session_token: str
     redirect_path: str  # decided server-side; never trust a client-supplied redirect
 
 
@@ -98,8 +67,18 @@ class AuthService:
     # Registration — customers only, always
     # ------------------------------------------------------------------ #
     def register_customer(
-        self, *, email: Optional[str], phone: Optional[str], password: str, full_name: Optional[str] = None
+        self,
+        *,
+        email: Optional[str],
+        phone: Optional[str],
+        password: str,
+        full_name: Optional[str],
+        reserved_identifiers: Iterable[str] = (),
     ) -> User:
+        name_error = validate_full_name(full_name)
+        if name_error:
+            raise AuthError(name_error)
+
         id_error = validate_identifier(email, phone)
         if id_error:
             raise AuthError(id_error)
@@ -109,46 +88,19 @@ class AuthService:
             raise AuthError(pw_error)
 
         identifier = (email or phone or "").strip().lower()
-        if self._repo.exists(identifier):
-            # Same generic phrasing style as login — don't confirm which
-            # field collided, just that the account can't be created.
-            raise AuthError("An account with those details already exists.")
+        reserved = {r.strip().lower() for r in reserved_identifiers if r}
+        if identifier in reserved or self._repo.exists(identifier):
+            # Same generic phrasing whether the collision is a customer or the
+            # reserved admin identity.
+            raise AuthError(ACCOUNT_EXISTS_ERROR)
 
         user = User(
             public_user_id=User.new_public_id(UserRole.CUSTOMER),
-            full_name=full_name,
+            full_name=full_name.strip(),
             email=email.strip().lower() if email else None,
             phone=phone.strip() if phone else None,
             password_hash="",
-            role=UserRole.CUSTOMER,   # <-- hardcoded; not derived from input
-            status=UserStatus.ACTIVE,
-        )
-        user.set_password(password)
-        return self._repo.save(user)
-
-    # ------------------------------------------------------------------ #
-    # Admin provisioning — deliberately NOT reachable from a public route.
-    # Call this only from a seed/management script, or from an internal
-    # endpoint that already requires an authenticated admin session.
-    # ------------------------------------------------------------------ #
-    def create_admin_account(
-        self, *, email: str, password: str, created_by_admin_id: Optional[int] = None
-    ) -> User:
-        id_error = validate_identifier(email, None)
-        if id_error:
-            raise AuthError(id_error)
-        pw_error = validate_password_policy(password)
-        if pw_error:
-            raise AuthError(pw_error)
-        if self._repo.exists(email.strip().lower()):
-            raise AuthError("An account with those details already exists.")
-
-        user = User(
-            public_user_id=User.new_public_id(UserRole.ADMIN),
-            email=email.strip().lower(),
-            phone=None,
-            password_hash="",
-            role=UserRole.ADMIN,
+            role=UserRole.CUSTOMER,   # hardcoded; never derived from input
             status=UserStatus.ACTIVE,
         )
         user.set_password(password)
@@ -157,25 +109,34 @@ class AuthService:
     # ------------------------------------------------------------------ #
     # Unified login — the one endpoint both roles use
     # ------------------------------------------------------------------ #
-    def authenticate(self, *, identifier: str, password: str) -> AuthResult:
-        identifier = identifier.strip().lower()
+    def authenticate(
+        self,
+        *,
+        identifier: str,
+        password: str,
+        admin_email: str = "",
+        admin_password: str = "",
+    ) -> AuthResult:
+        identifier = (identifier or "").strip().lower()
+        password = password or ""
+
+        # Administrator: verified ONLY against the environment credentials.
+        if admin_email and admin_password and identifier == admin_email.strip().lower():
+            if not hmac.compare_digest(password.encode("utf-8"), admin_password.encode("utf-8")):
+                raise AuthError(GENERIC_LOGIN_ERROR)
+            admin = self._provision_admin(admin_email.strip().lower())
+            return AuthResult(user=admin, redirect_path=post_login_redirect(admin.role))
+
+        # Customer: verified against the database.
+        now = datetime.now(timezone.utc)
         user = self._repo.get_by_identifier(identifier)
 
-        now = datetime.now(timezone.utc)
-
-        if user is None:
-            # Do real work anyway so response timing doesn't leak whether
-            # the account exists (a cheap but worthwhile mitigation).
-            from werkzeug.security import check_password_hash
-            check_password_hash("pbkdf2:sha256:1000$dummy$dummy", password)
+        # Admin rows can never log in with a database password (see module doc).
+        if user is None or user.role == UserRole.ADMIN:
+            check_password_hash(_DUMMY_HASH, password)
             raise AuthError(GENERIC_LOGIN_ERROR)
 
-        if user.is_locked(now=now):
-            # Same generic message — don't tell an attacker they found a
-            # valid identifier and just need to wait out a lock.
-            raise AuthError(GENERIC_LOGIN_ERROR)
-
-        if user.status != UserStatus.ACTIVE:
+        if user.is_locked(now=now) or user.status != UserStatus.ACTIVE:
             raise AuthError(GENERIC_LOGIN_ERROR)
 
         if not user.check_password(password):
@@ -185,34 +146,42 @@ class AuthService:
             self._repo.save(user)
             raise AuthError(GENERIC_LOGIN_ERROR)
 
-        # Success
         user.failed_login_attempts = 0
         user.locked_until = None
         user.last_login_at = now
         self._repo.save(user)
+        return AuthResult(user=user, redirect_path=post_login_redirect(user.role))
 
-        return AuthResult(
-            user=user,
-            session_token=self._issue_session_token(user),
-            redirect_path=post_login_redirect(user.role),
-        )
-
-    @staticmethod
-    def _issue_session_token(user: User) -> str:
+    # ------------------------------------------------------------------ #
+    def _provision_admin(self, email: str) -> User:
         """
-        Placeholder token issuance. In production this should be a signed,
-        short-lived JWT or a server-side session ID (e.g. Flask-Login /
-        itsdangerous), carrying `user.id` and `user.role` inside a payload
-        the CLIENT CANNOT MODIFY. The role must never be re-derived from
-        anything the browser sends after login.
+        Ensure a database row exists for the environment admin and is an active
+        administrator. The row's password is random and unknown: the real
+        credential is the environment variable, checked in authenticate().
         """
-        return secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+        user = self._repo.get_by_identifier(email)
+        if user is None:
+            user = User(
+                public_user_id=User.new_public_id(UserRole.ADMIN),
+                full_name="Administrator",
+                email=email,
+                phone=None,
+                password_hash="",
+                role=UserRole.ADMIN,
+                status=UserStatus.ACTIVE,
+            )
+        # The environment credentials are authoritative for this identity.
+        if user.role != UserRole.ADMIN or not user.password_hash:
+            user.set_password(secrets.token_urlsafe(48))
+        user.role = UserRole.ADMIN
+        user.status = UserStatus.ACTIVE
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        user.last_login_at = now
+        return self._repo.save(user)
 
 
-def post_login_redirect(role: UserRole) -> str:
-    """
-    The only place role ever affects behavior visible to the browser —
-    and even then, only as a destination URL after a successful login,
-    never as a hint on the login page itself.
-    """
+def post_login_redirect(role: str) -> str:
+    """Destination after a successful login, decided server-side from the role."""
     return "/admin" if role == UserRole.ADMIN else "/account/orders"

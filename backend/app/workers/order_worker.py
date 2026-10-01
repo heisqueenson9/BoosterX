@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 from typing import Optional, List, Dict
 from backend.app.db import db
-from backend.app.models import Order, OrderStatus, OrderEvent, Payment, PaymentStatus, GuestSession, Notification
+from backend.app.models import Order, OrderStatus, OrderEvent, Payment, PaymentStatus, Notification
 from backend.app.orders.order_service import refund_order
 from backend.app.providers.factory import get_provider_client
 from backend.app.providers.provider_client import ProviderError
@@ -71,7 +71,6 @@ def _do_check_pending_orders() -> dict:
                 db.session.add(OrderEvent(order_id=order.id, event_type="ORDER_COMPLETED", description="Provider marked order as Completed"))
                 db.session.add(Notification(
                     user_id=order.user_id,
-                    session_id=order.session_id,
                     title="Order Completed",
                     message=f"Order {order.public_order_id} for {order.platform} {order.service_name} has completed."
                 ))
@@ -84,7 +83,6 @@ def _do_check_pending_orders() -> dict:
                 db.session.add(OrderEvent(order_id=order.id, event_type="ORDER_PARTIAL", description=f"Provider marked Partial. Refunded GHS {refund_amt:.2f}"))
                 db.session.add(Notification(
                     user_id=order.user_id,
-                    session_id=order.session_id,
                     title="Order Partial Refund",
                     message=f"Order {order.public_order_id} was partially completed. GHS {refund_amt:.2f} refunded to wallet."
                 ))
@@ -97,7 +95,6 @@ def _do_check_pending_orders() -> dict:
                 db.session.add(OrderEvent(order_id=order.id, event_type="ORDER_CANCELLED", description=f"Provider cancelled order. Refunded GHS {refund_amt:.2f}"))
                 db.session.add(Notification(
                     user_id=order.user_id,
-                    session_id=order.session_id,
                     title="Order Cancelled",
                     message=f"Order {order.public_order_id} was cancelled by provider. Full refund issued."
                 ))
@@ -110,7 +107,6 @@ def _do_check_pending_orders() -> dict:
                 db.session.add(OrderEvent(order_id=order.id, event_type="ORDER_FAILED", description=f"Provider marked Failed. Refunded GHS {refund_amt:.2f}"))
                 db.session.add(Notification(
                     user_id=order.user_id,
-                    session_id=order.session_id,
                     title="Order Failed",
                     message=f"Order {order.public_order_id} failed at provider. Full refund issued."
                 ))
@@ -146,25 +142,3 @@ def _do_expire_payments() -> dict:
     db.session.commit()
     logger.info(f"Expired {count} unverified payments past expiration window.")
     return {"expired": count}
-
-
-def cleanup_expired_sessions(app=None) -> dict:
-    """
-    Background worker: deletes guest sessions inactive for > 30 days.
-    """
-    if app:
-        with app.app_context():
-            return _do_cleanup_expired_sessions()
-    else:
-        return _do_cleanup_expired_sessions()
-
-
-def _do_cleanup_expired_sessions() -> dict:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-    old_sessions = GuestSession.query.filter(GuestSession.last_active < cutoff).all()
-    count = len(old_sessions)
-    for s in old_sessions:
-        db.session.delete(s)
-    db.session.commit()
-    logger.info(f"Cleaned up {count} expired guest sessions.")
-    return {"cleaned": count}

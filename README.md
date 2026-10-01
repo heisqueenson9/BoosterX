@@ -1,16 +1,16 @@
 # BoostX —  Social Media Panel 
-BoostX is a guest-checkout social media boosting panel built specifically for Ghana, supporting local Mobile Money payments in Ghana Cedi (GHS) only.
+BoostX is an account-based social media boosting panel built specifically for Ghana, supporting local Mobile Money payments in Ghana Cedi (GHS) only.
 
 ---
 
 ## Features
 
-- **Guest Checkout & Cookie Sessioning**: Customers can browse, fund their wallet, place orders, and track fulfillment without registering an account.
+- **Account-based Access**: Customers sign up, sign in, fund their wallet, place orders, and track fulfillment under their own account. There is no guest access.
 - **Mobile Money & AI Vision Verification**: Integrates Telecel Cash, MTN MoMo, and AirtelTigo Cash payments with OpenAI Vision verification for instant receipt verification.
 - **Double-Entry Financial Ledger**: Single-transaction atomic balance locking (`posted`, `reserved`, `released`) preventing double-spend and negative balances under PostgreSQL row locks.
 - **Defensive Provider Integration**: Wrapped SMM panel API integration (`boostcenter2.com/api/v2`) with zero-retry guarantees on state-changing actions (`add`, `cancel`, `refill`).
 - **Comprehensive Admin Panel**: Full management dashboard for payment reviews, order fulfillment, catalog controls, exchange rates, audit logs, and system health.
-- **Rate Limiting & Security Guards**: `Flask-Limiter` endpoint protection, generic 401 auth errors, 5-attempt lockout, and 404 security guard on `/api/admin/*`.
+- **Rate Limiting & Security Guards**: `Flask-Limiter` endpoint protection, generic login errors, 5-attempt lockout, and an admin-only guard on `/api/admin/*`.
 
 ---
 
@@ -23,7 +23,7 @@ BoosterX/
 │   │   ├── admin/          # Admin REST API & security guard
 │   │   ├── ai/             # OpenAI Vision receipt extraction
 │   │   ├── api/            # Catalog, order, and account endpoints
-│   │   ├── auth/           # Guest sessions, repository, user auth
+│   │   ├── auth/           # Sign-up/login, sessions, repository
 │   │   ├── orders/         # 7-step order execution algorithm & refunds
 │   │   ├── payments/       # Upload security & single-transaction decision engine
 │   │   ├── pricing/        # Pricing engine (Decimal math, GHS conversion)
@@ -32,7 +32,7 @@ BoosterX/
 │   │   └── workers/        # Background workers & scheduler
 │   ├── migrations/         # Alembic database migrations
 │   ├── tests/              # Pytest test suite (M1 to M6 + PostgreSQL concurrency tests)
-│   ├── cli.py              # CLI seed & create-admin commands
+│   ├── cli.py              # CLI seed command
 │   ├── config.py           # System constants & operational limits
 │   └── requirements.txt    # Python backend package dependencies
 ├── frontend/               # Frozen React 19 + Tailwind v4 frontend
@@ -67,8 +67,13 @@ cp .env.example .env
 pip install -r backend/requirements.txt
 flask --app backend.app:create_app db upgrade
 flask --app backend.app:create_app seed
-flask --app backend.app:create_app create-admin
 ```
+
+### Authentication
+- An account is required to use BoostX: visitors can only see the **Sign in** and **Create account** pages. Every `/api/*` endpoint (other than login/register/me/logout) rejects unauthenticated requests with `401`, so protection does not depend on the frontend.
+- **Customers** sign up with name, email and password, and are signed in automatically.
+- **The administrator** signs in on the same login page using `ADMIN_EMAIL` and `ADMIN_PASSWORD` from the server environment. There is no admin sign-up and no admin password in the database; if either variable is unset, admin login is disabled. Set them as Render secret variables / in your gitignored `.env`.
+- Sessions are signed, HttpOnly, SameSite=Lax cookies (Secure in production) that expire after `SESSION_LIFETIME_HOURS` (default 7 days). Signing out revokes the session on the server.
 
 ### 4. Frontend Build
 ```bash

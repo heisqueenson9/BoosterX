@@ -7,7 +7,7 @@ from rq_scheduler import Scheduler
 
 from backend.app import create_app
 from backend.app.workers.sync_services import sync_services_worker
-from backend.app.workers.order_worker import check_pending_orders, expire_payments, cleanup_expired_sessions
+from backend.app.workers.order_worker import check_pending_orders, expire_payments
 from backend.app.workers.fx_worker import refresh_fx_rate
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -46,12 +46,6 @@ def run_scheduler():
         )
         scheduler.schedule(
             scheduled_time=datetime.utcnow(),
-            func=cleanup_expired_sessions,
-            interval=900,  # Every 15 minutes
-            repeat=None
-        )
-        scheduler.schedule(
-            scheduled_time=datetime.utcnow(),
             func=sync_services_worker,
             interval=3600, # Every 60 minutes
             repeat=None
@@ -74,7 +68,6 @@ def run_fallback_loop(app):
     logger.info("Starting in-process scheduled task loop...")
     last_order_check = 0
     last_expire_check = 0
-    last_session_clean = 0
     last_sync = 0
     last_fx = 0
 
@@ -96,14 +89,6 @@ def run_fallback_loop(app):
                 except Exception as e:
                     logger.error(f"Error in expire_payments: {e}")
                 last_expire_check = now
-
-            # Cleanup expired sessions (every 900s)
-            if now - last_session_clean >= 900:
-                try:
-                    cleanup_expired_sessions(app)
-                except Exception as e:
-                    logger.error(f"Error in cleanup_expired_sessions: {e}")
-                last_session_clean = now
 
             # Sync services (every 3600s)
             if now - last_sync >= 3600:

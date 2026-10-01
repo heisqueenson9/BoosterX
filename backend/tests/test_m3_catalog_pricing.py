@@ -65,7 +65,7 @@ def test_service_sync_worker(app):
             assert s.platform in ["TikTok", "Instagram", "Facebook", "X", "Telegram"]
             assert s.enabled is False  # New services start disabled per spec
 
-def test_catalog_endpoints(client, app):
+def test_catalog_endpoints(client, app, signup):
     with app.app_context():
         sync_services_worker()
         # Enable Instagram service for catalog testing
@@ -73,6 +73,10 @@ def test_catalog_endpoints(client, app):
         svc.enabled = True
         db.session.commit()
         svc_id = svc.id
+
+    # The catalog is only available to signed-in users
+    assert client.get("/api/platforms").status_code == 401
+    csrf = signup(client)["X-CSRF-Token"]
 
     # GET /api/platforms
     res_p = client.get("/api/platforms")
@@ -87,7 +91,6 @@ def test_catalog_endpoints(client, app):
     assert len(s_data["services"]) == 1
 
     # POST /api/orders/preview
-    csrf = client.post("/api/session").get_json()["csrf_token"]
     res_prev = client.post("/api/orders/preview", json={
         "service_id": svc_id,
         "quantity": 1000

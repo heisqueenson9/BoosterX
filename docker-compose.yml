@@ -27,6 +27,8 @@ services:
       - PROVIDER_API_KEY=${PROVIDER_API_KEY}
       - AI_API_KEY=${AI_API_KEY}
       - AI_MODEL=${AI_MODEL:-gpt-4o-mini}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     depends_on:
       - db
       - redis

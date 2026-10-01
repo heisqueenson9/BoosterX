@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request, current_app
 from backend.app.db import db
 from backend.app.models import Platform, Service, Setting
 from backend.app.pricing.pricing_service import PricingService, PricingSettings, PricingError
-from backend.app.auth.session import get_current_user, get_or_create_guest_session, hash_token
+from backend.app.auth.session import require_user
 from backend.app.services.ledger_service import get_owner_balance
 
 catalog_bp = Blueprint("catalog", __name__, url_prefix="/api")
@@ -120,16 +120,8 @@ def preview_order():
     except PricingError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    user = get_current_user()
-    if user:
-        user_id = user.id
-        session_id_hash = None
-    else:
-        user_id = None
-        raw_cookie = request.cookies.get(current_app.config["GUEST_COOKIE_NAME"])
-        session_id_hash = hash_token(raw_cookie) if raw_cookie else None
-
-    available_balance = get_owner_balance(user_id, session_id_hash)
+    user = require_user()
+    available_balance = get_owner_balance(user.id)
     sufficient = available_balance >= quote.customer_price_ghs
 
     return jsonify({

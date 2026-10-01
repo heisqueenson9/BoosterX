@@ -8,6 +8,10 @@ export interface UserInfo {
   csrf_token?: string;
 }
 
+export interface AuthResponse extends UserInfo {
+  redirect_path: string;
+}
+
 export interface PlatformItem {
   id: number;
   name: string;

@@ -60,4 +60,7 @@ This document logs all key architectural, security, and design decisions made du
 - **Decision**: Set default `AI_API_URL` to `https://generativelanguage.googleapis.com/v1beta/openai/` and `AI_MODEL` to `gemini-2.0-flash-lite`. If API quota/rate limits (HTTP 429) or network errors occur, `PaymentAI.extract()` returns `integrity_flags=["AI_EXTRACTION_FAILED"]` and `confidence=0.0`. The decision engine routes failed extractions to `PaymentStatus.REVIEW_REQUIRED` for human admin review instead of rejecting payments.
 - **Rationale**: Protects customers from false payment rejections during AI rate limit exhaustion or third-party outages while keeping verification zero-cost on Gemini free tier.
 
-
+### DEC-00X: Account required; guest checkout removed (supersedes DEC-002)
+- **Context**: Guest sessions (and claiming guest money on sign-up) allowed using the system without an account.
+- **Decision**: An account is mandatory. All `/api/*` endpoints except login/register/me/logout require a signed-in customer (deny-by-default `before_request` guard); `/api/admin/*` requires the admin. Guest sessions, the guest cookie and claim-on-signup were removed. The administrator authenticates only with the `ADMIN_EMAIL` / `ADMIN_PASSWORD` environment variables (no admin sign-up, no stored admin password).
+- **Note**: Legacy `session_id` columns / `guest_sessions` table may still exist in older databases; the application no longer reads or writes them.

@@ -19,7 +19,6 @@ def app():
         db.create_all()
         runner = app.test_cli_runner()
         runner.invoke(args=["seed"])
-        runner.invoke(args=["create-admin", "--email", "admin_test@boostx.com", "--password", "AdminPassword123!"])
         yield app
         db.session.remove()
         db.drop_all()
@@ -33,29 +32,19 @@ def app():
 def client(app):
     return app.test_client()
 
-def test_admin_404_security_guard_for_unauthenticated(client):
+def test_admin_guard_for_unauthenticated(client):
     res = client.get("/api/admin/overview")
-    assert res.status_code == 404
-    assert res.get_json()["error"] == "Resource not found"
+    assert res.status_code == 401
 
-def test_admin_404_security_guard_for_customer(client):
-    # Register customer
-    res_reg = client.post("/api/auth/register", json={
-        "identifier": "customer1@boostx.com",
-        "full_name": "Customer One",
-        "phone": "+233241112222",
-        "password": "Password123!"
-    })
-    assert res_reg.status_code == 201
+def test_admin_404_security_guard_for_customer(client, signup):
+    signup(client, email="customer1@boostx.com", full_name="Customer One")
 
     res = client.get("/api/admin/overview")
     assert res.status_code == 404
     assert res.get_json()["error"] == "Resource not found"
 
-def test_admin_authenticated_access_and_overview(client):
-    # Login as admin
-    res_log = client.post("/api/auth/login", json={"identifier": "admin@boostx.com", "password": "AdminPass123!"})
-    assert res_log.status_code == 200
+def test_admin_authenticated_access_and_overview(client, admin_login):
+    admin_login(client)
 
     res_ov = client.get("/api/admin/overview")
     assert res_ov.status_code == 200
@@ -64,16 +53,18 @@ def test_admin_authenticated_access_and_overview(client):
     assert "active_orders" in data
     assert "provider_balance" in data
 
-def test_admin_payment_verification_and_rejection(client, app):
-    # Login as admin
-    csrf = client.post("/api/auth/login", json={"identifier": "admin@boostx.com", "password": "AdminPass123!"}).get_json()["csrf_token"]
+def test_admin_payment_verification_and_rejection(client, app, admin_login):
+    csrf = admin_login(client)["X-CSRF-Token"]
 
     # Create dummy payment in DB
     with app.app_context():
+        owner = User(public_user_id="BX-USR-TESTPAY1", email="payer@example.com", password_hash="x",
+                     role=UserRole.CUSTOMER, status=UserStatus.ACTIVE, full_name="Payer")
+        db.session.add(owner)
+        db.session.flush()
         p = Payment(
             payment_id="PAY-TEST-99",
-            user_id=None,
-            session_id="test_sess_99",
+            user_id=owner.id,
             network="Telecel",
             amount_ghs=50.00,
             status="Verifying"
@@ -94,8 +85,8 @@ def test_admin_payment_verification_and_rejection(client, app):
         action = AdminAction.query.filter_by(action="VERIFY_PAYMENT").first()
         assert action is not None
 
-def test_admin_order_actions_and_service_controls(client, app):
-    csrf = client.post("/api/auth/login", json={"identifier": "admin@boostx.com", "password": "AdminPass123!"}).get_json()["csrf_token"]
+def test_admin_order_actions_and_service_controls(client, app, admin_login):
+    csrf = admin_login(client)["X-CSRF-Token"]
 
     # Service update
     res_s = client.patch("/api/admin/services/1", json={"enabled": True, "min_qty": 50}, headers={"X-CSRF-Token": csrf})
@@ -119,3 +110,17 @@ def test_admin_order_actions_and_service_controls(client, app):
     res_a = client.get("/api/admin/audit-logs")
     assert res_a.status_code == 200
     assert len(res_a.get_json()["audit_logs"]) > 0
+
+def test_admin_cannot_modify_admin_accounts_via_user_api(client, app, admin_login):
+    csrf = admin_login(client)["X-CSRF-Token"]
+    with app.app_context():
+        admin_id = User.query.filter_by(role=UserRole.ADMIN).first().id
+    res = client.patch(f"/api/admin/users/{admin_id}", json={"status": "suspended"}, headers={"X-CSRF-Token": csrf})
+    assert res.status_code == 403
+    with app.app_context():
+        assert db.session.get(User, admin_id).status == UserStatus.ACTIVE
+
+def test_no_endpoint_creates_admin_accounts(client, admin_login):
+    csrf = admin_login(client)["X-CSRF-Token"]
+    res = client.post("/api/admin/admins", json={"email": "x@y.com", "password": "Password123!"}, headers={"X-CSRF-Token": csrf})
+    assert res.status_code in (404, 405)

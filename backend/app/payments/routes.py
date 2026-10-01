@@ -3,7 +3,7 @@ from decimal import Decimal
 from flask import Blueprint, jsonify, request, current_app, make_response
 from backend.app.db import db
 from backend.app.models import Payment, PaymentStatus, PaymentVerification, Setting
-from backend.app.auth.session import get_current_user, get_or_create_guest_session, hash_token
+from backend.app.auth.session import require_user
 from backend.app.payments.upload import validate_and_save_screenshot, UploadError
 from backend.app.ai.payment_ai import PaymentAI
 from backend.app.payments.decision_engine import process_payment_verification
@@ -16,6 +16,7 @@ payments_bp = Blueprint("payments", __name__, url_prefix="/api/payments")
 @payments_bp.post("")
 @limiter.limit("10 per minute")
 def create_payment():
+    user = require_user()
     data = request.get_json(silent=True) or {}
     amount_raw = data.get("amount_ghs") or data.get("amount")
     network = data.get("network", "Telecel")
@@ -37,22 +38,9 @@ def create_payment():
     if amount_ghs < min_amt or amount_ghs > max_amt:
         return jsonify({"error": f"Payment amount must be between GHS {min_amt:.2f} and GHS {max_amt:.2f}"}), 400
 
-    user = get_current_user()
-    if user:
-        user_id = user.id
-        session_id_hash = None
-    else:
-        user_id = None
-        raw_cookie = request.cookies.get(current_app.config["GUEST_COOKIE_NAME"])
-        if not raw_cookie:
-            raw_cookie, session_id_hash = get_or_create_guest_session()
-        else:
-            session_id_hash = hash_token(raw_cookie)
-
     payment = Payment(
         payment_id=Payment.new_payment_id(),
-        user_id=user_id,
-        session_id=session_id_hash,
+        user_id=user.id,
         network=network,
         amount_ghs=amount_ghs,
         status=PaymentStatus.IDLE
@@ -72,18 +60,9 @@ def create_payment():
 @payments_bp.post("/<payment_id>/screenshot")
 @limiter.limit("10 per minute")
 def upload_screenshot(payment_id: str):
+    user = require_user()
     payment = Payment.query.filter_by(payment_id=payment_id).first()
-    if not payment:
-        return jsonify({"error": "Payment not found"}), 404
-
-    user = get_current_user()
-    raw_cookie = request.cookies.get(current_app.config["GUEST_COOKIE_NAME"])
-    session_id_hash = hash_token(raw_cookie) if raw_cookie else None
-
-    # Verify ownership
-    if user and payment.user_id != user.id:
-        return jsonify({"error": "Payment not found"}), 404
-    if not user and payment.session_id != session_id_hash:
+    if not payment or payment.user_id != user.id:
         return jsonify({"error": "Payment not found"}), 404
 
     if "file" not in request.files:
@@ -125,8 +104,9 @@ def upload_screenshot(payment_id: str):
 
 @payments_bp.get("/<payment_id>")
 def get_payment(payment_id: str):
+    user = require_user()
     payment = Payment.query.filter_by(payment_id=payment_id).first()
-    if not payment:
+    if not payment or payment.user_id != user.id:
         return jsonify({"error": "Payment not found"}), 404
 
     pv = PaymentVerification.query.filter_by(payment_id=payment.id).order_by(PaymentVerification.id.desc()).first()
@@ -149,18 +129,8 @@ def get_payment(payment_id: str):
 
 @payments_bp.get("")
 def list_payments():
-    user = get_current_user()
-    raw_cookie = request.cookies.get(current_app.config["GUEST_COOKIE_NAME"])
-    session_id_hash = hash_token(raw_cookie) if raw_cookie else None
-
-    if user:
-        query = Payment.query.filter_by(user_id=user.id)
-    elif session_id_hash:
-        query = Payment.query.filter_by(session_id=session_id_hash, user_id=None)
-    else:
-        return jsonify({"payments": []}), 200
-
-    payments = query.order_by(Payment.id.desc()).all()
+    user = require_user()
+    payments = Payment.query.filter_by(user_id=user.id).order_by(Payment.id.desc()).all()
     return jsonify({
         "payments": [{
             "payment_id": p.payment_id,
