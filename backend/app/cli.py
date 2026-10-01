@@ -118,7 +118,7 @@ def register_cli_commands(app):
         click.echo("Settings seeded.")
         
         # 3. Seed initial default services if no enabled services exist
-        if Service.query.filter_by(enabled=True).count() == 0:
+        if os.getenv("PROVIDER_MODE", "fake") != "live" and Service.query.filter_by(enabled=True).count() == 0:
             for s_data in DEFAULT_MOCK_SERVICES:
                 existing = Service.query.filter_by(provider_service_id=s_data["provider_service_id"]).first()
                 if not existing:
@@ -130,10 +130,15 @@ def register_cli_commands(app):
 
         # 4. Seed initial admin if specified in ENV or missing
         admin_email = os.getenv("ADMIN_EMAIL", "admin@boostx.com")
-        admin_password = os.getenv("ADMIN_PASSWORD", "AdminPass123!")
-        
-        admin_user = User.query.filter_by(email=admin_email).first()
-        if not admin_user:
+        admin_password = os.getenv("ADMIN_PASSWORD")
+        if not admin_password:
+            if app.config.get("TESTING") or app.debug:
+                admin_password = "AdminPass123!"
+            else:
+                click.echo("ADMIN_PASSWORD not set; skipping admin creation. Set ADMIN_EMAIL/ADMIN_PASSWORD or run `flask create-admin`.")
+
+        admin_user = User.query.filter_by(email=admin_email).first() if admin_password else None
+        if admin_password and not admin_user:
             admin_user = User(
                 public_user_id=User.new_public_id(UserRole.ADMIN),
                 full_name="Enock Admin",

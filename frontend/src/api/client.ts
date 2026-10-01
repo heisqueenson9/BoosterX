@@ -13,7 +13,7 @@ export function getCsrfToken(): string | null {
   return csrfToken;
 }
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(endpoint: string, options: RequestInit = {}, retried = false): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> || {}),
@@ -23,11 +23,23 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers["X-CSRF-Token"] = csrfToken;
   }
 
-  const response = await fetch(endpoint, {
+  let response = await fetch(endpoint, {
     ...options,
     headers,
     credentials: "same-origin",
   });
+
+  // Stale/missing CSRF token (e.g. session cookie expired): refresh once and retry.
+  if (response.status === 403 && !retried && endpoint !== "/api/session") {
+    const body = await response.clone().json().catch(() => ({}));
+    if (typeof body.error === "string" && body.error.includes("CSRF")) {
+      const init = await fetch("/api/session", { method: "POST", credentials: "same-origin" });
+      const initData = await init.json().catch(() => ({}));
+      if (initData.csrf_token) csrfToken = initData.csrf_token;
+      const { ["X-CSRF-Token"]: _drop, ...rest } = (options.headers as Record<string, string>) || {};
+      return request<T>(endpoint, { ...options, headers: rest }, true);
+    }
+  }
 
   const contentType = response.headers.get("content-type") || "";
   let data: any = {};

@@ -66,7 +66,7 @@ def test_admin_authenticated_access_and_overview(client):
 
 def test_admin_payment_verification_and_rejection(client, app):
     # Login as admin
-    client.post("/api/auth/login", json={"identifier": "admin@boostx.com", "password": "AdminPass123!"})
+    csrf = client.post("/api/auth/login", json={"identifier": "admin@boostx.com", "password": "AdminPass123!"}).get_json()["csrf_token"]
 
     # Create dummy payment in DB
     with app.app_context():
@@ -82,7 +82,7 @@ def test_admin_payment_verification_and_rejection(client, app):
         db.session.commit()
 
     # Manual verify
-    res_v = client.post("/api/admin/payments/PAY-TEST-99/verify", json={"reference": "MANUAL-TX-99"})
+    res_v = client.post("/api/admin/payments/PAY-TEST-99/verify", json={"reference": "MANUAL-TX-99"}, headers={"X-CSRF-Token": csrf})
     assert res_v.status_code == 200
 
     with app.app_context():
@@ -95,10 +95,10 @@ def test_admin_payment_verification_and_rejection(client, app):
         assert action is not None
 
 def test_admin_order_actions_and_service_controls(client, app):
-    client.post("/api/auth/login", json={"identifier": "admin@boostx.com", "password": "AdminPass123!"})
+    csrf = client.post("/api/auth/login", json={"identifier": "admin@boostx.com", "password": "AdminPass123!"}).get_json()["csrf_token"]
 
     # Service update
-    res_s = client.patch("/api/admin/services/1", json={"enabled": True, "min_qty": 50})
+    res_s = client.patch("/api/admin/services/1", json={"enabled": True, "min_qty": 50}, headers={"X-CSRF-Token": csrf})
     assert res_s.status_code == 200
 
     with app.app_context():
@@ -107,7 +107,7 @@ def test_admin_order_actions_and_service_controls(client, app):
         assert srv.min_qty == 50
 
     # Platform update
-    res_p = client.patch("/api/admin/platforms/1", json={"active": True})
+    res_p = client.patch("/api/admin/platforms/1", json={"active": True}, headers={"X-CSRF-Token": csrf})
     assert res_p.status_code == 200
 
     # System Health

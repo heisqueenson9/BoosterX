@@ -87,10 +87,11 @@ def test_catalog_endpoints(client, app):
     assert len(s_data["services"]) == 1
 
     # POST /api/orders/preview
+    csrf = client.post("/api/session").get_json()["csrf_token"]
     res_prev = client.post("/api/orders/preview", json={
         "service_id": svc_id,
         "quantity": 1000
-    })
+    }, headers={"X-CSRF-Token": csrf})
     assert res_prev.status_code == 200
     prev_data = res_prev.get_json()
     assert "service_cost_ghs" in prev_data

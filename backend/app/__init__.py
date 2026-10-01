@@ -37,6 +37,11 @@ def create_app(config_class=Config):
     limiter.init_app(app)
     CORS(app, supports_credentials=True)
 
+    # Enforce CSRF on every state-changing request (the guest-session bootstrap
+    # endpoint is exempted inside validate_csrf itself).
+    from backend.app.middleware import validate_csrf
+    app.before_request(validate_csrf)
+
     # Ensure upload directory exists
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 

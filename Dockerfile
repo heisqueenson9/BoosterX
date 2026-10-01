@@ -30,4 +30,5 @@ ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=backend.app:create_app()
 EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "backend.app:create_app()"]
+ENV PORT=5000
+CMD ["sh", "-c", "flask db upgrade && gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 'backend.app:create_app()'"]

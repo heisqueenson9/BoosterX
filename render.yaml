@@ -8,7 +8,7 @@ services:
     # runs it on a free-tier web service, which is why the database never
     # got its tables. Running the (idempotent) migration here instead means
     # it runs on every boot; safe on free or paid plans either way.
-    dockerCommand: "flask db upgrade && gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 'backend.app:create_app()'"
+    dockerCommand: "flask db upgrade && flask seed && gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 'backend.app:create_app()'"
     envVars:
       - key: FLASK_ENV
         value: production
@@ -28,6 +28,10 @@ services:
       - key: PROVIDER_API_URL
         value: https://baloonboost.com/api/v2
       - key: PROVIDER_API_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
         sync: false
       - key: AI_API_KEY
         sync: false

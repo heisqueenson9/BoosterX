@@ -43,10 +43,11 @@ def create_dummy_image_bytes(fmt="PNG"):
     return buf
 
 def test_create_payment(client):
+    csrf = client.post("/api/session").get_json()["csrf_token"]
     res = client.post("/api/payments", json={
         "amount_ghs": 100.00,
         "network": "Telecel"
-    })
+    }, headers={"X-CSRF-Token": csrf})
     assert res.status_code == 201
     data = res.get_json()
     assert "payment_id" in data

@@ -31,6 +31,10 @@ def validate_csrf():
         # Exclude public session initialization endpoint
         if request.path.endswith("/api/session"):
             return None
+        # Pre-auth endpoints: no authenticated session exists yet to forge
+        # actions against, and a first-time visitor may have no CSRF token.
+        if request.path in ("/api/auth/login", "/api/auth/register"):
+            return None
         sent_token = request.headers.get("X-CSRF-Token") or request.headers.get("X-CSRF-TOKEN")
         expected_token = session.get("csrf_token")
         if not expected_token or not sent_token or not secrets.compare_digest(sent_token, expected_token):
