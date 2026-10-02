@@ -329,5 +329,9 @@ export const api = {
 
   getAdminProviderBalance: async () => {
     return request<{ balance: string; currency: string }>("/api/admin/provider/balance");
+  },
+
+  testAdminProviderConnection: async () => {
+    return request<{ status: string; connected: boolean; balance: number; currency: string; service_count: number; error: string | null }>("/api/admin/provider/test", { method: "POST" });
   }
 };

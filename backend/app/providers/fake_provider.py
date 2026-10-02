@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Dict, List, Union
+from typing import Optional, Tuple, Dict, List, Union, Any
 from backend.app.providers.provider_client import ProviderService, ProviderOrderStatus, ProviderError
 
 class FakeProvider:
@@ -80,3 +80,13 @@ class FakeProvider:
 
     def get_provider_balance(self) -> Tuple[float, str]:
         return self.balance, self.currency
+
+    def test_provider_connection(self) -> Dict[str, Any]:
+        return {
+            "status": "Connected",
+            "connected": True,
+            "balance": self.balance,
+            "currency": self.currency,
+            "service_count": len(self.get_services()),
+            "error": None
+        }

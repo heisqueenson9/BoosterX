@@ -26,8 +26,12 @@ services:
       - key: PROVIDER_MODE
         value: live
       - key: PROVIDER_API_URL
-        value: https://baloonboost.com/api/v2
+        value: https://smm.africa/api/v3
       - key: PROVIDER_API_KEY
+        sync: false
+      - key: SMM_AFRICA_API_URL
+        value: https://smm.africa/api/v3
+      - key: SMM_AFRICA_API_KEY
         sync: false
       - key: ADMIN_EMAIL
         sync: false
@@ -64,8 +68,12 @@ services:
       - key: PROVIDER_MODE
         value: live
       - key: PROVIDER_API_URL
-        value: https://baloonboost.com/api/v2
+        value: https://smm.africa/api/v3
       - key: PROVIDER_API_KEY
+        sync: false
+      - key: SMM_AFRICA_API_URL
+        value: https://smm.africa/api/v3
+      - key: SMM_AFRICA_API_KEY
         sync: false
       - key: AI_API_KEY
         sync: false

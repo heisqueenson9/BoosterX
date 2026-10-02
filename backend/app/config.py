@@ -20,10 +20,14 @@ class Config:
     RATELIMIT_STORAGE_URI = "memory://" if (TESTING or "pytest" in sys.modules or "REDIS_URL" not in os.environ) else os.getenv("REDIS_URL")
     RATELIMIT_ENABLED = not TESTING
     
-    # Provider Settings
+    # Provider Settings (SMM Africa API Integration)
+    SMM_AFRICA_API_URL = os.getenv("SMM_AFRICA_API_URL", os.getenv("PROVIDER_API_URL", "https://smm.africa/api/v3"))
+    SMM_AFRICA_API_KEY = os.getenv("SMM_AFRICA_API_KEY", os.getenv("PROVIDER_API_KEY", "mock-provider-key"))
+    SMM_AFRICA_TEST_MODE = os.getenv("SMM_AFRICA_TEST_MODE", "false").lower() in ("true", "1")
+    
     PROVIDER_MODE = os.getenv("PROVIDER_MODE", "fake")  # 'live' or 'fake'
-    PROVIDER_API_URL = os.getenv("PROVIDER_API_URL", "https://baloonboost.com/api/v2")
-    PROVIDER_API_KEY = os.getenv("PROVIDER_API_KEY", "mock-provider-key")
+    PROVIDER_API_URL = SMM_AFRICA_API_URL
+    PROVIDER_API_KEY = SMM_AFRICA_API_KEY
     
     # AI Vision Verification Settings (Gemini OpenAI-compatible API)
     AI_API_URL = os.getenv("AI_API_URL", os.getenv("OPENAI_API_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"))

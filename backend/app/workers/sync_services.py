@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 from backend.app.db import db
@@ -48,6 +49,7 @@ def _do_sync() -> dict:
         if not platform or platform not in active_platforms:
             continue
 
+        now_utc = datetime.now(timezone.utc)
         fetched_provider_ids.add(item.service_id)
         
         service = Service.query.filter_by(provider_service_id=item.service_id).first()
@@ -63,7 +65,8 @@ def _do_sync() -> dict:
                 min_qty=item.min_qty,
                 max_qty=item.max_qty,
                 refill_available=item.refill_available,
-                enabled=False  # New services start disabled per spec
+                enabled=False,  # New services start disabled per spec
+                last_synced_at=now_utc
             )
             db.session.add(service)
             synced_count += 1
@@ -76,6 +79,7 @@ def _do_sync() -> dict:
             service.min_qty = item.min_qty
             service.max_qty = item.max_qty
             service.refill_available = item.refill_available
+            service.last_synced_at = now_utc
             updated_count += 1
 
     # Deactivate vanished services

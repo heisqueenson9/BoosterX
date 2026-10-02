@@ -5,10 +5,33 @@ import { Button, Card, Field, Icon, PageTitle, Status, type IconName } from "../
 
 export function AdminDashboard({ go }: { go: (page: string) => void }) {
   const [overview, setOverview] = useState<AdminOverviewStats | null>(null);
+  const [connResult, setConnResult] = useState<string | null>(null);
 
   useEffect(() => {
     api.getAdminOverview().then(setOverview).catch(() => {});
   }, []);
+
+  const handleTestConnection = async () => {
+    try {
+      const res = await api.testAdminProviderConnection();
+      if (res.connected) {
+        setConnResult(`Status: Connected | Balance: ${res.balance} ${res.currency} | Active Services: ${res.service_count}`);
+      } else {
+        setConnResult(`Connection Failed: ${res.error || "Unknown error"}`);
+      }
+    } catch (err: any) {
+      setConnResult(`Test Failed: ${err.message || "Network error"}`);
+    }
+  };
+
+  const handleCheckBalance = async () => {
+    try {
+      const res = await api.getAdminProviderBalance();
+      setConnResult(`Provider Balance: ${res.balance} ${res.currency}`);
+    } catch (err: any) {
+      setConnResult(`Balance Check Failed: ${err.message || "Network error"}`);
+    }
+  };
 
   return (
     <div className="admin-page">
@@ -22,7 +45,10 @@ export function AdminDashboard({ go }: { go: (page: string) => void }) {
           ["Total Registered Users", (overview?.total_users || 0).toString(), "users"],
           ["Failed Orders", (overview?.failed_orders || 0).toString(), "close"],
           ["Total System Orders", (overview?.total_orders || 0).toString(), "chart"],
-          ["Provider Balance", overview?.provider_balance || "Loading...", "wallet"]
+          ["Provider Balance", overview?.provider_balance || "Loading...", "wallet"],
+          ["Provider Connection", overview?.provider_connection_status || "Checking...", "shield"],
+          ["Active Services", (overview?.active_services_count || 0).toString(), "services"],
+          ["Last Catalog Sync", overview?.last_sync_timestamp && overview.last_sync_timestamp !== "Never" ? new Date(overview.last_sync_timestamp).toLocaleString() : "Never", "clock"]
         ].map(([label, val, icon]) => (
           <Card className="stat" key={label}>
             <div className="stat-head">
@@ -35,17 +61,25 @@ export function AdminDashboard({ go }: { go: (page: string) => void }) {
         ))}
       </div>
 
+      {connResult && (
+        <Card>
+          <p className="payment-warning"><strong>Provider Diagnostic:</strong> {connResult}</p>
+        </Card>
+      )}
+
       <Card>
         <div className="card-head">
           <div>
             <span className="eyebrow">Control Center</span>
-            <h2>Quick Actions</h2>
+            <h2>Quick Actions & Provider API Controls</h2>
           </div>
         </div>
         <div className="admin-order-actions">
           <Button variant="primary" icon="card" onClick={() => go("admin-payments")}>Review Payments ({overview?.pending_payment_reviews || 0})</Button>
           <Button variant="secondary" icon="orders" onClick={() => go("admin-orders")}>Manage Orders ({overview?.active_orders || 0} active)</Button>
           <Button variant="secondary" icon="services" onClick={() => go("admin-services")}>Service Catalog</Button>
+          <Button variant="secondary" icon="shield" onClick={handleTestConnection}>Test API Connection</Button>
+          <Button variant="secondary" icon="wallet" onClick={handleCheckBalance}>Check Balance</Button>
           <Button variant="secondary" icon="clock" onClick={() => go("admin-audit")}>Audit Logs</Button>
         </div>
       </Card>
@@ -246,6 +280,7 @@ export function AdminOrders() {
 
 export function AdminServices() {
   const [services, setServices] = useState<any[]>([]);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   useEffect(() => {
     api.getAdminServices().then(res => setServices(res.services)).catch(err => alert(err.message || "Failed to load admin services."));
@@ -263,12 +298,25 @@ export function AdminServices() {
 
   const handleSync = async () => {
     try {
-      await api.syncAdminServices();
+      const resSync = await api.syncAdminServices();
       const res = await api.getAdminServices();
       setServices(res.services);
-      alert("Services synchronized with provider.");
+      setStatusMsg(`Catalog Synced: ${resSync.added || 0} added, ${resSync.updated || 0} updated, ${resSync.deactivated || 0} deactivated.`);
     } catch (err: any) {
       alert(err.message);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    try {
+      const res = await api.testAdminProviderConnection();
+      if (res.connected) {
+        setStatusMsg(`Status: Connected | Balance: ${res.balance} ${res.currency} | Active Services: ${res.service_count}`);
+      } else {
+        setStatusMsg(`Connection Failed: ${res.error || "Unknown error"}`);
+      }
+    } catch (err: any) {
+      setStatusMsg(`Test Failed: ${err.message || "Network error"}`);
     }
   };
 
@@ -277,8 +325,19 @@ export function AdminServices() {
       <PageTitle
         title="Services Catalog"
         description="Control service availability and provider rates."
-        action={<Button variant="primary" icon="transactions" onClick={handleSync}>Sync Catalog with Provider</Button>}
+        action={
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Button variant="secondary" icon="shield" onClick={handleTestConnection}>Test Connection</Button>
+            <Button variant="primary" icon="transactions" onClick={handleSync}>REFRESH SERVICES</Button>
+          </div>
+        }
       />
+
+      {statusMsg && (
+        <Card>
+          <p className="payment-warning"><strong>Catalog Diagnostic:</strong> {statusMsg}</p>
+        </Card>
+      )}
 
       <Card>
         <div className="table-wrap">

@@ -254,6 +254,32 @@ class ProviderAdapter:
         data = self._post("get-username")
         return str(data.get("username", ""))
 
+    def test_provider_connection(self) -> dict[str, Any]:
+        """
+        Tests API connection, authentication, balance, and services fetch.
+        Never exposes the API key in output or logs.
+        """
+        try:
+            bal, curr = self.get_provider_balance()
+            services = self.get_services()
+            return {
+                "status": "Connected",
+                "connected": True,
+                "balance": bal,
+                "currency": curr,
+                "service_count": len(services),
+                "error": None
+            }
+        except Exception as exc:
+            return {
+                "status": "Connection Failed",
+                "connected": False,
+                "balance": 0.0,
+                "currency": "USD",
+                "service_count": 0,
+                "error": str(exc)
+            }
+
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #

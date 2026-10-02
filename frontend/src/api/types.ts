@@ -109,6 +109,10 @@ export interface AdminOverviewStats {
   failed_orders: number;
   total_orders: number;
   provider_balance: string;
+  provider_connection_status?: string;
+  active_services_count?: number;
+  last_sync_timestamp?: string;
+  orders_by_status?: Record<string, number>;
 }
 
 export interface AdminAuditLogItem {

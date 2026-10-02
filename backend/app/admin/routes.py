@@ -61,12 +61,24 @@ def get_dashboard_overview():
     failed_orders = Order.query.filter_by(status=OrderStatus.FAILED).count()
     total_orders = Order.query.count()
 
-    # Provider balance
+    active_services_count = Service.query.filter_by(enabled=True).count()
+
+    # Most recent service sync timestamp
+    latest_sync_srv = Service.query.filter(Service.last_synced_at.isnot(None)).order_by(Service.last_synced_at.desc()).first()
+    last_sync_timestamp = latest_sync_srv.last_synced_at.isoformat() if latest_sync_srv and latest_sync_srv.last_synced_at else "Never"
+
+    # Order count breakdown by status
+    status_counts_rows = db.session.query(Order.status, db.func.count(Order.id)).group_by(Order.status).all()
+    orders_by_status = {st: count for st, count in status_counts_rows}
+
+    # Provider status and balance
     try:
         provider = get_provider_client()
-        p_bal, p_curr = provider.get_provider_balance()
-        provider_bal_str = f"{p_bal:.2f} {p_curr}"
+        conn_test = provider.test_provider_connection()
+        provider_conn_status = conn_test.get("status", "Connected") if conn_test.get("connected") else "Connection Failed"
+        provider_bal_str = f"{conn_test.get('balance', 0.0):.2f} {conn_test.get('currency', 'USD')}"
     except Exception:
+        provider_conn_status = "Connection Failed"
         provider_bal_str = "Unavailable"
 
     return jsonify({
@@ -76,8 +88,19 @@ def get_dashboard_overview():
         "total_users": total_users,
         "failed_orders": failed_orders,
         "total_orders": total_orders,
-        "provider_balance": provider_bal_str
+        "provider_balance": provider_bal_str,
+        "provider_connection_status": provider_conn_status,
+        "active_services_count": active_services_count,
+        "last_sync_timestamp": last_sync_timestamp,
+        "orders_by_status": orders_by_status
     }), 200
+
+
+@admin_bp.route("/provider/test", methods=["GET", "POST"])
+def test_provider_connection_admin():
+    provider = get_provider_client()
+    res = provider.test_provider_connection()
+    return jsonify(res), 200
 
 
 @admin_bp.get("/payments")
