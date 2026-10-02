@@ -159,3 +159,44 @@ def change_password():
 
     session["session_version"] = user.session_version
     return jsonify({"message": "Password updated successfully."}), 200
+
+
+@auth_bp.patch("/account/profile")
+def update_profile():
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Authentication required."}), 401
+
+    data = request.get_json(silent=True) or {}
+    email = data.get("email")
+    full_name = data.get("full_name")
+
+    if email is not None:
+        email = str(email).strip().lower()
+        if email != (user.email or ""):
+            from backend.app.auth.models import validate_identifier
+            err = validate_identifier(email, None)
+            if err:
+                return jsonify({"error": err}), 400
+
+            existing = User.query.filter(User.email == email, User.id != user.id).first()
+            if existing:
+                return jsonify({"error": "That email is already in use"}), 400
+            user.email = email
+
+    if full_name is not None:
+        user.full_name = str(full_name).strip() if full_name else None
+
+    from sqlalchemy.exc import IntegrityError
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "That email is already in use"}), 400
+
+    return jsonify({
+        "message": "Profile updated successfully.",
+        "full_name": user.full_name,
+        "email": user.email
+    }), 200
+

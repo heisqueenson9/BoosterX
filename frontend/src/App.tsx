@@ -395,8 +395,252 @@ function Profile({ user }: { user: UserInfo | null }) {
   </>;
 }
 
-function Settings({ dark, setDark }: { dark: boolean; setDark: (v: boolean) => void }) {
-  return <><PageTitle title="Settings" description="Control your account preferences and security." /><Card><span className="eyebrow">Appearance</span><h2>Choose your theme</h2><div className="theme-cards"><button className={!dark ? "selected" : ""} onClick={() => setDark(false)}><span><Icon name="sun"/>Light mode</span></button><button className={dark ? "selected" : ""} onClick={() => setDark(true)}><span><Icon name="moon"/>Dark mode</span></button></div></Card></>;
+function Settings({ dark, setDark, user, setUser, go }: { dark: boolean; setDark: (v: boolean) => void; user: UserInfo | null; setUser: (u: UserInfo | null) => void; go: (page: string) => void }) {
+  const [copied, setCopied] = useState(false);
+  const fullName = user?.full_name || (user?.authenticated ? "Account User" : "Guest User");
+
+  const handleCopyName = () => {
+    if (!fullName) return;
+    navigator.clipboard.writeText(fullName);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdError, setPwdError] = useState("");
+  const [pwdSuccess, setPwdSuccess] = useState("");
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwdError("");
+    setPwdSuccess("");
+    if (!currentPassword || !newPassword) {
+      setPwdError("Please enter both your current password and new password.");
+      return;
+    }
+    setPwdLoading(true);
+    try {
+      const res = await api.changePassword(currentPassword, newPassword);
+      setPwdSuccess(res.message || "Password updated successfully.");
+      setCurrentPassword("");
+      setNewPassword("");
+    } catch (err: any) {
+      setPwdError(err.message || "Failed to update password.");
+    } finally {
+      setPwdLoading(false);
+    }
+  };
+
+  const [email, setEmail] = useState(user?.email || "");
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [emailSuccess, setEmailSuccess] = useState("");
+
+  useEffect(() => {
+    if (user?.email) {
+      setEmail(user.email);
+    }
+  }, [user?.email]);
+
+  const handleUpdateEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailError("");
+    setEmailSuccess("");
+    if (!email) {
+      setEmailError("Email cannot be empty.");
+      return;
+    }
+    setEmailLoading(true);
+    try {
+      const res = await api.updateProfile({ email });
+      setEmailSuccess(res.message || "Email updated successfully.");
+      if (user) {
+        setUser({ ...user, email: res.email || email });
+      }
+    } catch (err: any) {
+      setEmailError(err.message || "Failed to update email.");
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await api.logout().catch(() => {});
+    setUser(null);
+    go("login");
+  };
+
+  return (
+    <>
+      <PageTitle title="Settings" description="Control your account preferences and security." />
+      <div className="settings-content">
+        <Card>
+          <span className="eyebrow">Identity</span>
+          <h2>Account Details</h2>
+          <div className="fields-grid" style={{ marginTop: "1rem" }}>
+            <div className="field">
+              <span>Full Name</span>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <input type="text" value={fullName} readOnly style={{ background: "var(--surface-2)" }} />
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={handleCopyName}
+                  style={{ minWidth: "100px" }}
+                >
+                  <Icon name={copied ? "check" : "copy"} />
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {user?.authenticated && (
+          <Card>
+            <span className="eyebrow">Security</span>
+            <h2>Change Password</h2>
+            <form onSubmit={handleChangePassword}>
+              <div className="fields-grid" style={{ marginTop: "1rem" }}>
+                <div className="field">
+                  <span>Current Password</span>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type={showCurrentPw ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => setShowCurrentPw(!showCurrentPw)}
+                      title={showCurrentPw ? "Hide password" : "Show password"}
+                      aria-label="Toggle password visibility"
+                    >
+                      <Icon name="eye" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="field">
+                  <span>New Password</span>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type={showNewPw ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      onClick={() => setShowNewPw(!showNewPw)}
+                      title={showNewPw ? "Hide password" : "Show password"}
+                      aria-label="Toggle password visibility"
+                    >
+                      <Icon name="eye" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <p style={{ marginTop: "12px", fontSize: "12px", color: "var(--muted)" }}>
+                Changing your password will sign you out of all other devices.
+              </p>
+
+              {pwdError && (
+                <div className="payment-warning" style={{ marginTop: "1rem" }}>
+                  <strong>{pwdError}</strong>
+                </div>
+              )}
+
+              {pwdSuccess && (
+                <div className="service-note" style={{ marginTop: "1rem" }}>
+                  <Icon name="check" size={18} />
+                  <p style={{ margin: 0, fontWeight: 600 }}>{pwdSuccess}</p>
+                </div>
+              )}
+
+              <div style={{ marginTop: "1rem" }}>
+                <Button type="submit" disabled={pwdLoading}>
+                  {pwdLoading ? "Updating..." : "Update Password"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
+
+        {user?.authenticated && (
+          <Card>
+            <span className="eyebrow">Account Settings</span>
+            <h2>Email Address</h2>
+            <form onSubmit={handleUpdateEmail}>
+              <div className="fields-grid" style={{ marginTop: "1rem" }}>
+                <div className="field">
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    placeholder="yourname@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {emailError && (
+                <div className="payment-warning" style={{ marginTop: "1rem" }}>
+                  <strong>{emailError}</strong>
+                </div>
+              )}
+
+              {emailSuccess && (
+                <div className="service-note" style={{ marginTop: "1rem" }}>
+                  <Icon name="check" size={18} />
+                  <p style={{ margin: 0, fontWeight: 600 }}>{emailSuccess}</p>
+                </div>
+              )}
+
+              <div style={{ marginTop: "1rem" }}>
+                <Button type="submit" disabled={emailLoading}>
+                  {emailLoading ? "Saving..." : "Save Email"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
+
+        <Card>
+          <span className="eyebrow">Appearance</span>
+          <h2>Choose your theme</h2>
+          <div className="theme-cards">
+            <button className={!dark ? "selected" : ""} onClick={() => setDark(false)}>
+              <span><Icon name="sun"/>Light mode</span>
+            </button>
+            <button className={dark ? "selected" : ""} onClick={() => setDark(true)}>
+              <span><Icon name="moon"/>Dark mode</span>
+            </button>
+          </div>
+        </Card>
+
+        {user?.authenticated && (
+          <Card>
+            <span className="eyebrow">Account Actions</span>
+            <h2>Session Management</h2>
+            <div style={{ marginTop: "1rem" }}>
+              <Button variant="secondary" icon="logout" onClick={handleLogout}>
+                Log out
+              </Button>
+            </div>
+          </Card>
+        )}
+      </div>
+    </>
+  );
 }
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -580,7 +824,7 @@ export default function App() {
       case "transactions": return <Transactions />;
       case "support": return <Support />;
       case "profile": return <Profile user={user} />;
-      case "settings": return <Settings dark={dark} setDark={setDark} />;
+      case "settings": return <Settings dark={dark} setDark={setDark} user={user} setUser={setUser} go={go} />;
       case "track": return <TrackOrderPage go={go} />;
       case "help": return <HelpFAQPage />;
       case "terms": case "privacy": case "refunds": case "cookies": case "security": case "disclaimer":

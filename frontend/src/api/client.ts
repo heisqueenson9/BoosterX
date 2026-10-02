@@ -113,6 +113,20 @@ export const api = {
     return res;
   },
 
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    return request<{ message: string }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  },
+
+  updateProfile: async (data: { full_name?: string; email?: string }) => {
+    return request<{ message: string; full_name?: string; email?: string }>("/api/account/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
   // Catalog
   getPlatforms: async (): Promise<{ platforms: PlatformItem[] }> => {
     return request<{ platforms: PlatformItem[] }>("/api/platforms");

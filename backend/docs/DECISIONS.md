@@ -64,3 +64,8 @@ This document logs all key architectural, security, and design decisions made du
 - **Context**: Guest sessions (and claiming guest money on sign-up) allowed using the system without an account.
 - **Decision**: An account is mandatory. All `/api/*` endpoints except login/register/me/logout require a signed-in customer (deny-by-default `before_request` guard); `/api/admin/*` requires the admin. Guest sessions, the guest cookie and claim-on-signup were removed. The administrator authenticates only with the `ADMIN_EMAIL` / `ADMIN_PASSWORD` environment variables (no admin sign-up, no stored admin password).
 - **Note**: Legacy `session_id` columns / `guest_sessions` table may still exist in older databases; the application no longer reads or writes them.
+
+### DEC-011: Unconditional Password Change Session Revocation with Static Frontend Guidance
+- **Context**: The reference Settings panel displays a "Revoke old sessions" option during password change. The backend (`POST /api/auth/change-password`) unconditionally increments `user.session_version += 1`, revoking all other active sessions while re-syncing `session["session_version"]` for the current session.
+- **Decision**: Maintained unconditional session revocation on password change without adding a deceptive "optional" checkbox to the UI. Displayed a clear, static informational note in the Settings UI: `"Changing your password will sign you out of all other devices."`
+- **Rationale**: Keeps session security robust and guarantees user feedback accurately reflects server behavior without adding unnecessary backend complexity or UI misrepresentation.

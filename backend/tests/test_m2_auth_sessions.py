@@ -14,26 +14,19 @@ ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 
 @pytest.fixture
-def app():
-    db_path = os.path.join(os.path.dirname(__file__), "test_m2.db")
-    if os.path.exists(db_path):
-        os.remove(db_path)
+def app(tmp_path):
+    db_file = tmp_path / "test_m2.db"
     app = create_app()
     app.config.update({
         "TESTING": True,
-        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_path}",
-        "SECRET_KEY": "test-secret-key",
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_file}",
+        "SECRET_KEY": "test-secret-key"
     })
     with app.app_context():
         db.create_all()
         yield app
         db.session.remove()
         db.drop_all()
-    if os.path.exists(db_path):
-        try:
-            os.remove(db_path)
-        except Exception:
-            pass
 
 
 @pytest.fixture
@@ -298,6 +291,7 @@ def test_change_password_validates_input(client, signup):
 def test_admin_logs_in_with_environment_credentials_only(client, app):
     # No admin account exists in the database before the first admin login.
     with app.app_context():
+<<<<<<< HEAD
         assert User.query.filter_by(role=UserRole.ADMIN).count() == 0
 
     res = client.post("/api/auth/login", json={"identifier": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
@@ -404,3 +398,40 @@ def test_refuses_to_start_with_default_secret_key_outside_testing():
 def test_cors_is_disabled_by_default(client):
     res = client.get("/api/auth/me", headers={"Origin": "https://evil.example"})
     assert "Access-Control-Allow-Origin" not in res.headers
+
+
+def test_update_profile_email_and_duplicate_rejection(client):
+    # 1. Register user 1
+    u1 = client.post("/api/auth/register", json={
+        "full_name": "User One",
+        "email": "user1@example.com",
+        "password": "Password123!",
+        "confirm_password": "Password123!"
+    })
+    assert u1.status_code == 201
+
+    client.post("/api/auth/logout")
+
+    # 2. Register user 2
+    u2 = client.post("/api/auth/register", json={
+        "full_name": "User Two",
+        "email": "user2@example.com",
+        "password": "Password123!",
+        "confirm_password": "Password123!"
+    })
+    assert u2.status_code == 201
+
+    # 3. Update user 2 email to new unique email -> 200
+    res_ok = client.patch("/api/account/profile", json={
+        "email": "user2new@example.com"
+    })
+    assert res_ok.status_code == 200
+    assert res_ok.get_json()["email"] == "user2new@example.com"
+
+    # 4. Attempt to update user 2 email to user 1's email -> 400 (rejection with clear message, not 500)
+    res_dup = client.patch("/api/account/profile", json={
+        "email": "user1@example.com"
+    })
+    assert res_dup.status_code == 400
+    assert res_dup.get_json()["error"] == "That email is already in use"
+
