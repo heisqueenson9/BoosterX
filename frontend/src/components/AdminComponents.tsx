@@ -147,6 +147,7 @@ export function AdminPaymentReview({ go }: { go: (page: string) => void }) {
   const [reference, setReference] = useState("");
   const [reason, setReason] = useState("");
   const [msg, setMsg] = useState("");
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.hash.split("?")[1] || "");
@@ -199,7 +200,15 @@ export function AdminPaymentReview({ go }: { go: (page: string) => void }) {
             <div><dt>Network</dt><dd>{payment.network}</dd></div>
             <div><dt>Reference</dt><dd>{payment.reference || "N/A"}</dd></div>
             <div><dt>Status</dt><dd><Status>{payment.status}</Status></dd></div>
+            {payment.rejection_reason && (
+              <div><dt>Rejection Reason</dt><dd style={{ color: "#f87171" }}>{payment.rejection_reason}</dd></div>
+            )}
           </dl>
+          {payment.screenshot_filename && (
+            <div style={{ marginTop: "1rem" }}>
+              <Button variant="secondary" icon="eye" onClick={() => setShowModal(true)}>View Payment Screenshot</Button>
+            </div>
+          )}
         </Card>
 
         <Card>
@@ -213,6 +222,22 @@ export function AdminPaymentReview({ go }: { go: (page: string) => void }) {
           </div>
         </Card>
       </div>
+
+      {showModal && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowModal(false)}>
+          <div style={{ background: "var(--surface-1, #1e293b)", padding: "1.5rem", borderRadius: "12px", maxWidth: "90vw", maxHeight: "90vh", overflow: "auto", position: "relative", color: "#fff" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <h3 style={{ margin: 0 }}>Payment Screenshot ({payment.payment_id})</h3>
+              <Button variant="ghost" icon="close" onClick={() => setShowModal(false)}>Close</Button>
+            </div>
+            <img
+              src={`/api/admin/payments/${encodeURIComponent(payment.payment_id)}/screenshot`}
+              alt="Payment Evidence Screenshot"
+              style={{ maxWidth: "100%", maxHeight: "70vh", borderRadius: "8px", objectFit: "contain" }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

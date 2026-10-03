@@ -168,3 +168,16 @@ def test_payment_spec_test_10_another_person_payment(client, customer_headers):
     assert res_up.status_code == 200
     assert res_up.json["status"] == PaymentStatus.REJECTED
     assert res_up.json["verified"] is False
+
+def test_payment_spec_test_11_network_mismatch(client, customer_headers):
+    """TEST 11: Selected network is MTN but screenshot is Telecel => REJECTED with network mismatch"""
+    res = client.post("/api/payments", json={"amount_ghs": "20.00", "network": "MTN"}, headers=customer_headers)
+    pay_id = res.json["payment_id"]
+
+    buf = _create_mock_png()
+    # Mock screenshot filename contains telecel so AI returns provider Telecel while payment network is MTN
+    res_up = client.post(f"/api/payments/{pay_id}/screenshot", data={"file": (buf, "test11_telecel.png")}, headers=customer_headers)
+    assert res_up.status_code == 200
+    assert res_up.json["status"] == PaymentStatus.REJECTED
+    assert res_up.json["verified"] is False
+

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, send_from_directory
 from backend.app.db import db
 from backend.app.models import (
     User, UserRole, UserStatus, Payment, PaymentStatus, PaymentVerification,
@@ -219,6 +219,26 @@ def manual_reject_payment(payment_id: str):
     db.session.commit()
 
     return jsonify({"message": f"Payment {payment.payment_id} marked as rejected."}), 200
+
+
+@admin_bp.get("/payments/<payment_id>/screenshot")
+def get_admin_payment_screenshot(payment_id: str):
+    payment = Payment.query.filter_by(payment_id=payment_id).first()
+    if not payment or not payment.screenshot_filename:
+        return jsonify({"error": "Screenshot not found for this payment"}), 404
+
+    upload_folder = current_app.config['UPLOAD_FOLDER']
+    return send_from_directory(upload_folder, payment.screenshot_filename)
+
+
+@admin_bp.get("/orders/<public_id>/evidence")
+def get_admin_order_evidence(public_id: str):
+    order = Order.query.filter_by(public_order_id=public_id).first()
+    if not order or not getattr(order, 'evidence_filename', None):
+        return jsonify({"error": "Evidence not found for this order"}), 404
+
+    upload_folder = current_app.config.get('EVIDENCE_FOLDER', current_app.config['UPLOAD_FOLDER'])
+    return send_from_directory(upload_folder, order.evidence_filename)
 
 
 @admin_bp.get("/orders")

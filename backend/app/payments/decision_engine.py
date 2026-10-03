@@ -183,6 +183,24 @@ def process_payment_verification(payment: Payment, ai_result: PaymentAIExtractio
         failed_checks.append("recipient_mismatch")
         payment.rejection_reason = "Required recipient phone number or recipient name was not clearly detected in the payment screenshot."
 
+    # 1b. Check Network Match
+    if ai_result.provider and payment.network:
+        sel_net = payment.network.lower()
+        ext_net = ai_result.provider.lower()
+
+        def norm_net_name(n):
+            if "mtn" in n: return "mtn"
+            if "telecel" in n or "voda" in n: return "telecel"
+            if "at" in n or "airtel" in n or "tigo" in n: return "at"
+            return n
+
+        if norm_net_name(sel_net) != norm_net_name(ext_net):
+            failed_checks.append("network_mismatch")
+            if not payment.rejection_reason:
+                payment.rejection_reason = "The selected payment network does not match the uploaded payment evidence."
+        else:
+            passed_checks.append("network_matched")
+
     # 2. Check Completed Payment Status
     status_clean = (ai_result.status or "").lower()
     if status_clean in ("successful", "success", "completed", "sent"):
@@ -267,7 +285,7 @@ def process_payment_verification(payment: Payment, ai_result: PaymentAIExtractio
 
     # Decision Matrix Evaluation:
     reject_flags = {
-        "duplicate_reference", "duplicate_file_hash", "recipient_mismatch", "status_unsuccessful",
+        "duplicate_reference", "duplicate_file_hash", "recipient_mismatch", "network_mismatch", "status_unsuccessful",
         "missing_amount", "amount_mismatch", "doctored_screenshot", "invalid_reference_format", "expired_screenshot_timestamp"
     }
     if any(flag in failed_checks for flag in reject_flags):

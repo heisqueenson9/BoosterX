@@ -327,56 +327,273 @@ function Wallet({ go }: { go: (page: string) => void }) {
 
 function Payment({ go }: { go: (page: string) => void }) {
   const [amount, setAmount] = useState("100");
-  const [network, setNetwork] = useState("Telecel");
-  const [upload, setUpload] = useState<"idle" | "uploading" | "verified" | "rejected" | "review">("idle");
+  const [network, setNetwork] = useState<"Telecel" | "MTN" | "AT">("Telecel");
+  const [uploadState, setUploadState] = useState<"idle" | "uploading" | "completed">("idle");
   const [filename, setFilename] = useState("");
-  const [paymentId, setPaymentId] = useState("");
+  const [result, setResult] = useState<any | null>(null);
   const [error, setError] = useState("");
+  const [copiedPhone, setCopiedPhone] = useState(false);
+  const [copiedRef, setCopiedRef] = useState(false);
 
-  const selectFile = async (file?: File) => {
+  const copyPhone = () => {
+    navigator.clipboard.writeText("0202979378");
+    setCopiedPhone(true);
+    setTimeout(() => setCopiedPhone(false), 2000);
+  };
+
+  const copyRef = () => {
+    navigator.clipboard.writeText("BOOSTX");
+    setCopiedRef(true);
+    setTimeout(() => setCopiedRef(false), 2000);
+  };
+
+  const handleFileUpload = async (file?: File) => {
     if (!file) return;
     setFilename(file.name);
-    setUpload("uploading");
+    setUploadState("uploading");
     setError("");
+    setResult(null);
 
     try {
       const p = await api.createPayment(Number(amount), network);
-      setPaymentId(p.payment_id);
       const res = await api.uploadScreenshot(p.payment_id, file);
-
-      if (res.status === "Verified") setUpload("verified");
-      else if (res.status === "Rejected") setUpload("rejected");
-      else setUpload("review");
+      setResult(res);
+      setUploadState("completed");
     } catch (err: any) {
-      setError(err.message || "Upload failed");
-      setUpload("idle");
+      setError(err.message || "Payment verification upload failed.");
+      setUploadState("idle");
     }
   };
 
-  return <><PageTitle title="Complete Payment" description="Send the exact amount, then upload your payment screenshot." />
-    <div className="payment-layout">
-      <div className="payment-main">
-        <Card><div className="card-head"><div><span className="eyebrow">Amount to send</span><h2>Choose your payment amount</h2></div><span className="icon-tile"><Icon name="wallet"/></span></div><Field label="Amount in Ghana Cedi" value={amount} type="number" onChange={setAmount}/><div className="amounts">{["50","100","250","500"].map(a => <button className={amount === a ? "selected" : ""} onClick={() => setAmount(a)} key={a}>GHS {a}</button>)}</div></Card>
-        <Card><span className="eyebrow">Mobile money</span><h2>Select your network</h2><div className="network-tabs">{["Telecel","MTN","AirtelTigo"].map(n => <button className={network === n ? "active" : ""} onClick={() => setNetwork(n)} key={n}>{n}</button>)}</div>
-          <div className="payment-account"><div><small>Send payment to</small><strong>0202979378</strong><span>Telecel Cash · Account name: BOOSTX</span></div></div>
-        </Card>
-        <Card><span className="eyebrow">Payment proof</span><h2>Upload your screenshot</h2>
-          <label className={`upload-zone ${upload !== "idle" ? "has-file" : ""}`}>
-            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => selectFile(e.target.files?.[0])}/>
-            <span className="upload-icon"><Icon name={upload === "verified" ? "check" : "plus"} size={22}/></span>
-            <strong>{upload === "idle" ? "Drop your payment screenshot here" : upload === "uploading" ? "Uploading screenshot…" : filename}</strong>
-            {upload === "idle" && <span className="browse">Choose file</span>}
-          </label>
-          {error && <div className="payment-warning" style={{ marginTop: "1rem" }}><strong>{error}</strong></div>}
-        </Card>
+  const networks = [
+    { id: "MTN", name: "MTN MoMo", logo: "/networks/mtn.svg", sub: "*170#" },
+    { id: "Telecel", name: "Telecel Cash", logo: "/networks/telecel.svg", sub: "*110#" },
+    { id: "AT", name: "AT Money", logo: "/networks/at.svg", sub: "*110#" },
+  ] as const;
+
+  const getInstructions = () => {
+    switch (network) {
+      case "MTN":
+        return [
+          "Dial *170# on your MTN phone.",
+          "Select Option 1: Transfer Money → MoMo User.",
+          "Enter Mobile Number: 0202979378",
+          `Enter Amount: GHS ${Number(amount || 0).toFixed(2)}`,
+          "Enter Reference: BOOSTX",
+          "Confirm recipient: BOOSTX / Enock Queenson Eduafo & enter PIN."
+        ];
+      case "Telecel":
+        return [
+          "Dial *110# on your Telecel phone.",
+          "Select Option 1: Send Money.",
+          "Select Telecel / Other Networks.",
+          "Enter Recipient Number: 0202979378",
+          `Enter Amount: GHS ${Number(amount || 0).toFixed(2)}`,
+          "Enter Reference: BOOSTX",
+          "Confirm recipient: BOOSTX / Enock Queenson Eduafo & enter PIN."
+        ];
+      case "AT":
+        return [
+          "Dial *110# on your AT phone.",
+          "Select Option 1: Send Money.",
+          "Enter Recipient Number: 0202979378",
+          `Enter Amount: GHS ${Number(amount || 0).toFixed(2)}`,
+          "Enter Reference: BOOSTX",
+          "Confirm recipient details & enter PIN."
+        ];
+    }
+  };
+
+  return (
+    <>
+      <PageTitle title="Mobile Money Payment" description="Follow the guided steps below to complete your payment proof verification." />
+
+      <div className="payment-layout">
+        <div className="payment-main">
+
+          {/* STEP 1: Amount & Network Selection */}
+          <Card>
+            <div className="card-head">
+              <div>
+                <span className="eyebrow">Step 1 of 5 · Amount & Network</span>
+                <h2>Select Network & Payment Amount</h2>
+              </div>
+              <span className="icon-tile"><Icon name="wallet"/></span>
+            </div>
+
+            <Field label="Amount to deposit (GHS)" value={amount} type="number" onChange={setAmount} />
+            <div className="amounts" style={{ marginBottom: "1.5rem" }}>
+              {["50", "100", "250", "500", "1000"].map(a => (
+                <button key={a} className={amount === a ? "selected" : ""} onClick={() => setAmount(a)}>
+                  GHS {a}
+                </button>
+              ))}
+            </div>
+
+            <label className="field"><span>Select Payment Network</span></label>
+            <div className="network-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginTop: "8px" }}>
+              {networks.map(n => (
+                <button
+                  key={n.id}
+                  type="button"
+                  className={`network-card ${network === n.id ? "active" : ""}`}
+                  onClick={() => setNetwork(n.id as any)}
+                  style={{
+                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    padding: "16px", borderRadius: "10px", border: network === n.id ? "2px solid var(--primary, #3b82f6)" : "1px solid var(--border, #334155)",
+                    background: network === n.id ? "var(--surface-hover, rgba(59, 130, 246, 0.1))" : "var(--surface-2, #1e293b)", cursor: "pointer"
+                  }}
+                >
+                  <img src={n.logo} alt={n.name} style={{ height: "36px", marginBottom: "8px", objectFit: "contain" }} />
+                  <strong style={{ fontSize: "14px" }}>{n.name}</strong>
+                  <small style={{ opacity: 0.7 }}>{n.sub}</small>
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          {/* STEP 2: Transfer Instructions */}
+          <Card>
+            <span className="eyebrow">Step 2 of 5 · Transfer Guide</span>
+            <h2>{network} Transfer Instructions</h2>
+            <ol className="instruction-list" style={{ paddingLeft: "1.2rem", marginTop: "1rem", lineHeight: "1.8" }}>
+              {getInstructions().map((stepText, idx) => (
+                <li key={idx} style={{ marginBottom: "6px" }}>{stepText}</li>
+              ))}
+            </ol>
+          </Card>
+
+          {/* STEP 3: Account Recipient Details */}
+          <Card>
+            <span className="eyebrow">Step 3 of 5 · Account Details</span>
+            <h2>Send Payment To</h2>
+            <div className="payment-account" style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--surface-2, #0f172a)", borderRadius: "8px" }}>
+                <div>
+                  <small style={{ color: "var(--text-muted, #94a3b8)" }}>Recipient Number</small>
+                  <div style={{ fontSize: "18px", fontWeight: "bold", fontFamily: "monospace" }}>0202979378</div>
+                </div>
+                <Button variant="secondary" icon={copiedPhone ? "check" : "copy"} onClick={copyPhone}>
+                  {copiedPhone ? "Copied" : "Copy"}
+                </Button>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--surface-2, #0f172a)", borderRadius: "8px" }}>
+                <div>
+                  <small style={{ color: "var(--text-muted, #94a3b8)" }}>Account Name</small>
+                  <div style={{ fontSize: "16px", fontWeight: "600" }}>BOOSTX / Enock Queenson Eduafo</div>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--surface-2, #0f172a)", borderRadius: "8px" }}>
+                <div>
+                  <small style={{ color: "var(--text-muted, #94a3b8)" }}>Reference</small>
+                  <div style={{ fontSize: "16px", fontWeight: "bold", fontFamily: "monospace" }}>BOOSTX</div>
+                </div>
+                <Button variant="secondary" icon={copiedRef ? "check" : "copy"} onClick={copyRef}>
+                  {copiedRef ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {/* STEP 4: Screenshot Upload */}
+          <Card>
+            <span className="eyebrow">Step 4 of 5 · Proof of Payment</span>
+            <h2>Upload Payment Screenshot</h2>
+            <label className={`upload-zone ${uploadState !== "idle" ? "has-file" : ""}`}>
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => handleFileUpload(e.target.files?.[0])} disabled={uploadState === "uploading"} />
+              <span className="upload-icon"><Icon name={uploadState === "completed" ? "check" : "plus"} size={22} /></span>
+              <strong>
+                {uploadState === "idle" ? "Drop your payment screenshot here or click to browse" : uploadState === "uploading" ? "AI Engine Verifying Screenshot…" : filename}
+              </strong>
+              {uploadState === "idle" && <span className="browse">Choose file</span>}
+            </label>
+            {error && <div className="payment-warning" style={{ marginTop: "1rem" }}><strong>{error}</strong></div>}
+          </Card>
+
+        </div>
+
+        {/* STEP 5: Verification Result Card */}
+        <div className="payment-side">
+          <Card className="summary">
+            <span className="eyebrow">Payment Summary</span>
+            <h2>Summary</h2>
+            <div className="total">
+              <span>Deposit Amount</span>
+              <strong>GHS {Number(amount || 0).toFixed(2)}</strong>
+            </div>
+            <div style={{ marginTop: "8px", fontSize: "14px", opacity: 0.8 }}>
+              Network: <strong>{network}</strong>
+            </div>
+          </Card>
+
+          {uploadState === "uploading" && (
+            <Card className="verification-result">
+              <Status>Verifying</Status>
+              <h2 style={{ marginTop: "12px" }}>Analyzing Payment Proof</h2>
+              <p style={{ fontSize: "14px", opacity: 0.8 }}>AI Payment Verification Engine is reading reference, recipient, and amount from screenshot…</p>
+            </Card>
+          )}
+
+          {result && (
+            <Card className="verification-result" style={{ borderTop: `4px solid ${result.verified ? "#22c55e" : result.status === "Review Required" ? "#f59e0b" : "#ef4444"}` }}>
+              <Status>{result.status}</Status>
+              <h2 style={{ marginTop: "12px" }}>
+                {result.verified ? "Payment Verified!" : result.status === "Review Required" ? "Under Review" : "Verification Failed"}
+              </h2>
+
+              <div className="breakdown" style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "8px", fontSize: "14px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Network Verification:</span>
+                  <strong style={{ color: result.network_verified !== false ? "#22c55e" : "#ef4444" }}>
+                    {result.network_verified !== false ? "✓ Matched" : "✗ Mismatch"}
+                  </strong>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Recipient Verified:</span>
+                  <strong style={{ color: result.recipient_verified ? "#22c55e" : "#ef4444" }}>
+                    {result.recipient_verified ? "✓ 0202979378 / Name Matched" : "✗ Recipient Mismatch"}
+                  </strong>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Amount Verified:</span>
+                  <strong style={{ color: result.amount_verified ? "#22c55e" : "#ef4444" }}>
+                    {result.amount_verified ? `✓ GHS ${result.expected_amount_ghs}` : `✗ Extracted: GHS ${result.detected_amount_ghs || "N/A"}`}
+                  </strong>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Status Check:</span>
+                  <strong style={{ color: result.payment_status_verified ? "#22c55e" : "#ef4444" }}>
+                    {result.payment_status_verified ? "✓ Completed" : "✗ Pending / Failed"}
+                  </strong>
+                </div>
+              </div>
+
+              {result.reason && (
+                <div style={{ marginTop: "1rem", padding: "10px 12px", borderRadius: "6px", background: result.verified ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)", color: result.verified ? "#22c55e" : "#f87171", fontSize: "13px" }}>
+                  <strong>Note:</strong> {result.reason}
+                </div>
+              )}
+
+              <div style={{ marginTop: "1.5rem" }}>
+                {result.verified ? (
+                  <Button full onClick={() => go("orders")}>Continue to Orders</Button>
+                ) : (
+                  <Button full variant="secondary" onClick={() => { setUploadState("idle"); setResult(null); }}>
+                    Upload New Screenshot
+                  </Button>
+                )}
+              </div>
+            </Card>
+          )}
+        </div>
       </div>
-      <div className="payment-side">
-        <Card className="summary"><span className="eyebrow">Payment summary</span><h2>Review payment</h2><div className="total"><span>Exact amount due</span><strong>GHS {Number(amount || 0).toFixed(2)}</strong></div></Card>
-        {upload === "verified" && <Card className="verification-result"><Status>Verified</Status><h2>Payment confirmed</h2><Button full onClick={() => go("orders")}>Continue to Orders</Button></Card>}
-        {upload === "rejected" && <Card className="verification-result"><Status>Rejected</Status><h2>Payment could not be verified</h2><Button full variant="secondary" onClick={() => setUpload("idle")}>Upload New Screenshot</Button></Card>}
-      </div>
-    </div>
-  </>;
+    </>
+  );
 }
 
 function Transactions() {

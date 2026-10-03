@@ -80,11 +80,30 @@ def upload_screenshot(payment_id: str):
     payment.status = PaymentStatus.VERIFYING
     db.session.commit()
 
-    # Trigger AI Extraction & Decision Engine
     saved_path = f"{current_app.config['UPLOAD_FOLDER']}/{saved_filename}"
-    ai_result = PaymentAI.extract(saved_path, original_filename=file_storage.filename)
-
-    decision = process_payment_verification(payment, ai_result)
+    try:
+        ai_result = PaymentAI.extract(saved_path, original_filename=file_storage.filename)
+        decision = process_payment_verification(payment, ai_result)
+    except Exception as exc:
+        payment.status = PaymentStatus.REJECTED
+        payment.rejection_reason = "Payment verification could not be completed. Please upload a clearer screenshot and try again."
+        db.session.commit()
+        return jsonify({
+            "payment_id": payment.payment_id,
+            "status": PaymentStatus.REJECTED,
+            "verified": False,
+            "recipient_verified": False,
+            "amount_verified": False,
+            "payment_status_verified": False,
+            "duplicate": False,
+            "verified_amount": None,
+            "reason": payment.rejection_reason,
+            "expected_amount_ghs": f"{payment.amount_ghs:.2f}",
+            "detected_amount_ghs": None,
+            "recipient": "0202979378 / Enock Queenson Eduafo",
+            "reference": payment.transaction_reference,
+            "rejection_reason": payment.rejection_reason,
+        }), 200
 
     pv = PaymentVerification.query.filter_by(payment_id=payment.id).order_by(PaymentVerification.id.desc()).first()
 
@@ -94,15 +113,18 @@ def upload_screenshot(payment_id: str):
         "verified": decision == PaymentStatus.VERIFIED,
         "recipient_verified": "recipient_matched" in (pv.checks_passed if pv else []),
         "amount_verified": "amount_exact" in (pv.checks_passed if pv else []),
+        "network_verified": "network_mismatch" not in (pv.checks_failed if pv else []),
         "payment_status_verified": "status_successful" in (pv.checks_passed if pv else []),
         "duplicate": any(c in (pv.checks_failed if pv else []) for c in ("duplicate_reference", "duplicate_file_hash")),
         "verified_amount": float(ai_result.amount) if (decision == PaymentStatus.VERIFIED and ai_result.amount is not None) else None,
         "reason": payment.rejection_reason or ("Payment verified successfully" if decision == PaymentStatus.VERIFIED else "Payment verification failed."),
         "expected_amount_ghs": f"{payment.amount_ghs:.2f}",
-        "detected_amount_ghs": f"{ai_result.amount:.2f}" if ai_result.amount is not None else None,
-        "recipient": ai_result.recipient_name or "0202979378 / Enock Queenson Eduafo",
-        "reference": payment.transaction_reference,
+        "detected_amount_ghs": f"{ai_result.amount:.2f}" if (ai_result and ai_result.amount is not None) else None,
+        "recipient": (ai_result.recipient_name or ai_result.recipient_number) if ai_result else "0202979378 / Enock Queenson Eduafo",
+        "reference": payment.transaction_reference or (ai_result.reference if ai_result else None),
         "rejection_reason": payment.rejection_reason,
+        "checks_passed": pv.checks_passed if pv else [],
+        "checks_failed": pv.checks_failed if pv else []
     }
 
     resp = make_response(jsonify(resp_data), 200)
