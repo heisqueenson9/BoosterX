@@ -326,14 +326,13 @@ function Wallet({ go }: { go: (page: string) => void }) {
 }
 
 function Payment({ go }: { go: (page: string) => void }) {
-  const [amount, setAmount] = useState("100");
-  const [network, setNetwork] = useState<"Telecel" | "MTN" | "AT">("Telecel");
+  const [amount, setAmount] = useState("");
+  const [network, setNetwork] = useState<"MTN" | "Telecel" | "AT">("Telecel");
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "completed">("idle");
   const [filename, setFilename] = useState("");
   const [result, setResult] = useState<any | null>(null);
   const [error, setError] = useState("");
   const [copiedPhone, setCopiedPhone] = useState(false);
-  const [copiedRef, setCopiedRef] = useState(false);
 
   const copyPhone = () => {
     navigator.clipboard.writeText("0202979378");
@@ -341,21 +340,20 @@ function Payment({ go }: { go: (page: string) => void }) {
     setTimeout(() => setCopiedPhone(false), 2000);
   };
 
-  const copyRef = () => {
-    navigator.clipboard.writeText("BOOSTX");
-    setCopiedRef(true);
-    setTimeout(() => setCopiedRef(false), 2000);
-  };
-
   const handleFileUpload = async (file?: File) => {
     if (!file) return;
+    const numAmount = Number(amount);
+    if (!amount || isNaN(numAmount) || numAmount <= 0) {
+      setError("Please enter a valid payment amount before uploading screenshot.");
+      return;
+    }
     setFilename(file.name);
     setUploadState("uploading");
     setError("");
     setResult(null);
 
     try {
-      const p = await api.createPayment(Number(amount), network);
+      const p = await api.createPayment(numAmount, network);
       const res = await api.uploadScreenshot(p.payment_id, file);
       setResult(res);
       setUploadState("completed");
@@ -372,66 +370,60 @@ function Payment({ go }: { go: (page: string) => void }) {
   ] as const;
 
   const getInstructions = () => {
-    switch (network) {
-      case "MTN":
-        return [
-          "Dial *170# on your MTN phone.",
-          "Select Option 1: Transfer Money → MoMo User.",
-          "Enter Mobile Number: 0202979378",
-          `Enter Amount: GHS ${Number(amount || 0).toFixed(2)}`,
-          "Enter Reference: BOOSTX",
-          "Confirm recipient: BOOSTX / Enock Queenson Eduafo & enter PIN."
-        ];
-      case "Telecel":
-        return [
-          "Dial *110# on your Telecel phone.",
-          "Select Option 1: Send Money.",
-          "Select Telecel / Other Networks.",
-          "Enter Recipient Number: 0202979378",
-          `Enter Amount: GHS ${Number(amount || 0).toFixed(2)}`,
-          "Enter Reference: BOOSTX",
-          "Confirm recipient: BOOSTX / Enock Queenson Eduafo & enter PIN."
-        ];
-      case "AT":
-        return [
-          "Dial *110# on your AT phone.",
-          "Select Option 1: Send Money.",
-          "Enter Recipient Number: 0202979378",
-          `Enter Amount: GHS ${Number(amount || 0).toFixed(2)}`,
-          "Enter Reference: BOOSTX",
-          "Confirm recipient details & enter PIN."
-        ];
-    }
+    const netName = network === "MTN" ? "MTN MoMo" : network === "Telecel" ? "Telecel Cash" : "AT Money";
+    return [
+      `Open ${netName}.`,
+      "Select Send Money.",
+      "Enter 0202979378.",
+      `Enter your payment amount${amount ? ` (GH₵ ${Number(amount).toFixed(2)})` : ""}.`,
+      "Confirm the recipient details.",
+      "Complete the payment.",
+      "Keep the successful payment confirmation.",
+      "Upload the screenshot."
+    ];
   };
 
   return (
     <>
-      <PageTitle title="Mobile Money Payment" description="Follow the guided steps below to complete your payment proof verification." />
+      <PageTitle title="Complete Payment" description="Send payment to the number below and upload your proof screenshot." />
 
       <div className="payment-layout">
         <div className="payment-main">
 
-          {/* STEP 1: Amount & Network Selection */}
+          {/* Amount & Network Selection */}
           <Card>
             <div className="card-head">
               <div>
-                <span className="eyebrow">Step 1 of 5 · Amount & Network</span>
-                <h2>Select Network & Payment Amount</h2>
+                <span className="eyebrow">Payment Amount</span>
+                <h2>Enter Payment Amount</h2>
               </div>
               <span className="icon-tile"><Icon name="wallet"/></span>
             </div>
 
-            <Field label="Amount to deposit (GHS)" value={amount} type="number" onChange={setAmount} />
-            <div className="amounts" style={{ marginBottom: "1.5rem" }}>
-              {["50", "100", "250", "500", "1000"].map(a => (
-                <button key={a} className={amount === a ? "selected" : ""} onClick={() => setAmount(a)}>
-                  GHS {a}
+            <div className="field">
+              <label>Amount (GH₵)</label>
+              <input
+                type="number"
+                placeholder="GH₵ [ Enter amount ]"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                style={{ width: "100%", fontSize: "16px", padding: "10px 14px" }}
+              />
+            </div>
+
+            <div className="amounts" style={{ marginTop: "1rem" }}>
+              {["20", "50", "100", "200", "500"].map(a => (
+                <button key={a} type="button" className={amount === a ? "selected" : ""} onClick={() => setAmount(a)}>
+                  GH₵ {a}
                 </button>
               ))}
             </div>
+          </Card>
 
-            <label className="field"><span>Select Payment Network</span></label>
-            <div className="network-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginTop: "8px" }}>
+          <Card>
+            <span className="eyebrow">Select Network</span>
+            <h2>Choose Mobile Network</h2>
+            <div className="network-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginTop: "12px" }}>
               {networks.map(n => (
                 <button
                   key={n.id}
@@ -440,72 +432,51 @@ function Payment({ go }: { go: (page: string) => void }) {
                   onClick={() => setNetwork(n.id as any)}
                   style={{
                     display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                    padding: "16px", borderRadius: "10px", border: network === n.id ? "2px solid var(--primary, #3b82f6)" : "1px solid var(--border, #334155)",
-                    background: network === n.id ? "var(--surface-hover, rgba(59, 130, 246, 0.1))" : "var(--surface-2, #1e293b)", cursor: "pointer"
+                    padding: "16px", borderRadius: "10px", border: network === n.id ? "2px solid var(--text, #ffffff)" : "1px solid var(--border, #334155)",
+                    background: network === n.id ? "var(--hover, rgba(255, 255, 255, 0.08))" : "var(--surface-2, #1e293b)", cursor: "pointer"
                   }}
                 >
                   <img src={n.logo} alt={n.name} style={{ height: "36px", marginBottom: "8px", objectFit: "contain" }} />
                   <strong style={{ fontSize: "14px" }}>{n.name}</strong>
-                  <small style={{ opacity: 0.7 }}>{n.sub}</small>
                 </button>
               ))}
             </div>
           </Card>
 
-          {/* STEP 2: Transfer Instructions */}
+          {/* Send Payment Destination - NO ACCOUNT NAME DISPLAYED */}
           <Card>
-            <span className="eyebrow">Step 2 of 5 · Transfer Guide</span>
-            <h2>{network} Transfer Instructions</h2>
-            <ol className="instruction-list" style={{ paddingLeft: "1.2rem", marginTop: "1rem", lineHeight: "1.8" }}>
+            <span className="eyebrow">Send Payment To</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px", background: "var(--surface-2, #0f172a)", borderRadius: "10px", marginTop: "8px" }}>
+              <div>
+                <small style={{ color: "var(--muted, #94a3b8)", fontSize: "12px", display: "block" }}>Send payment to</small>
+                <strong style={{ fontSize: "24px", letterSpacing: "0.05em", fontFamily: "monospace" }}>0202979378</strong>
+              </div>
+              <Button variant="secondary" icon={copiedPhone ? "check" : "copy"} onClick={copyPhone}>
+                {copiedPhone ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </Card>
+
+          {/* Step-by-Step Payment Instructions */}
+          <Card>
+            <span className="eyebrow">Payment Instructions</span>
+            <h2>{network === "MTN" ? "MTN MoMo" : network === "Telecel" ? "Telecel Cash" : "AT Money"} Guide</h2>
+            <ol className="instructions" style={{ marginTop: "12px", paddingLeft: "1.2rem", lineHeight: "1.8" }}>
               {getInstructions().map((stepText, idx) => (
-                <li key={idx} style={{ marginBottom: "6px" }}>{stepText}</li>
+                <li key={idx} style={{ marginBottom: "6px", color: "var(--text)" }}>{stepText}</li>
               ))}
             </ol>
           </Card>
 
-          {/* STEP 3: Account Recipient Details */}
+          {/* Screenshot Upload */}
           <Card>
-            <span className="eyebrow">Step 3 of 5 · Account Details</span>
-            <h2>Send Payment To</h2>
-            <div className="payment-account" style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--surface-2, #0f172a)", borderRadius: "8px" }}>
-                <div>
-                  <small style={{ color: "var(--text-muted, #94a3b8)" }}>Recipient Number</small>
-                  <div style={{ fontSize: "18px", fontWeight: "bold", fontFamily: "monospace" }}>0202979378</div>
-                </div>
-                <Button variant="secondary" icon={copiedPhone ? "check" : "copy"} onClick={copyPhone}>
-                  {copiedPhone ? "Copied" : "Copy"}
-                </Button>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--surface-2, #0f172a)", borderRadius: "8px" }}>
-                <div>
-                  <small style={{ color: "var(--text-muted, #94a3b8)" }}>Account Name</small>
-                  <div style={{ fontSize: "16px", fontWeight: "600" }}>BOOSTX / Enock Queenson Eduafo</div>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "var(--surface-2, #0f172a)", borderRadius: "8px" }}>
-                <div>
-                  <small style={{ color: "var(--text-muted, #94a3b8)" }}>Reference</small>
-                  <div style={{ fontSize: "16px", fontWeight: "bold", fontFamily: "monospace" }}>BOOSTX</div>
-                </div>
-                <Button variant="secondary" icon={copiedRef ? "check" : "copy"} onClick={copyRef}>
-                  {copiedRef ? "Copied" : "Copy"}
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          {/* STEP 4: Screenshot Upload */}
-          <Card>
-            <span className="eyebrow">Step 4 of 5 · Proof of Payment</span>
+            <span className="eyebrow">Upload Proof</span>
             <h2>Upload Payment Screenshot</h2>
             <label className={`upload-zone ${uploadState !== "idle" ? "has-file" : ""}`}>
               <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => handleFileUpload(e.target.files?.[0])} disabled={uploadState === "uploading"} />
               <span className="upload-icon"><Icon name={uploadState === "completed" ? "check" : "plus"} size={22} /></span>
               <strong>
-                {uploadState === "idle" ? "Drop your payment screenshot here or click to browse" : uploadState === "uploading" ? "AI Engine Verifying Screenshot…" : filename}
+                {uploadState === "idle" ? "Drop your payment screenshot here or click to choose file" : uploadState === "uploading" ? "Verifying Screenshot…" : filename}
               </strong>
               {uploadState === "idle" && <span className="browse">Choose file</span>}
             </label>
@@ -514,16 +485,16 @@ function Payment({ go }: { go: (page: string) => void }) {
 
         </div>
 
-        {/* STEP 5: Verification Result Card */}
+        {/* Verification Result Section */}
         <div className="payment-side">
           <Card className="summary">
-            <span className="eyebrow">Payment Summary</span>
-            <h2>Summary</h2>
+            <span className="eyebrow">Summary</span>
+            <h2>Payment Details</h2>
             <div className="total">
-              <span>Deposit Amount</span>
-              <strong>GHS {Number(amount || 0).toFixed(2)}</strong>
+              <span>Amount</span>
+              <strong>GH₵ {amount ? Number(amount).toFixed(2) : "0.00"}</strong>
             </div>
-            <div style={{ marginTop: "8px", fontSize: "14px", opacity: 0.8 }}>
+            <div style={{ marginTop: "8px", fontSize: "14px" }}>
               Network: <strong>{network}</strong>
             </div>
           </Card>
@@ -531,63 +502,55 @@ function Payment({ go }: { go: (page: string) => void }) {
           {uploadState === "uploading" && (
             <Card className="verification-result">
               <Status>Verifying</Status>
-              <h2 style={{ marginTop: "12px" }}>Analyzing Payment Proof</h2>
-              <p style={{ fontSize: "14px", opacity: 0.8 }}>AI Payment Verification Engine is reading reference, recipient, and amount from screenshot…</p>
+              <h2 style={{ marginTop: "12px" }}>Analyzing Payment Screenshot</h2>
+              <p style={{ fontSize: "14px", opacity: 0.8 }}>Running AI OCR & checking recipient, amount, reference, and completion status…</p>
             </Card>
           )}
 
           {result && (
-            <Card className="verification-result" style={{ borderTop: `4px solid ${result.verified ? "#22c55e" : result.status === "Review Required" ? "#f59e0b" : "#ef4444"}` }}>
-              <Status>{result.status}</Status>
-              <h2 style={{ marginTop: "12px" }}>
-                {result.verified ? "Payment Verified!" : result.status === "Review Required" ? "Under Review" : "Verification Failed"}
-              </h2>
-
-              <div className="breakdown" style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "8px", fontSize: "14px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>Network Verification:</span>
-                  <strong style={{ color: result.network_verified !== false ? "#22c55e" : "#ef4444" }}>
-                    {result.network_verified !== false ? "✓ Matched" : "✗ Mismatch"}
-                  </strong>
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>Recipient Verified:</span>
-                  <strong style={{ color: result.recipient_verified ? "#22c55e" : "#ef4444" }}>
-                    {result.recipient_verified ? "✓ 0202979378 / Name Matched" : "✗ Recipient Mismatch"}
-                  </strong>
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>Amount Verified:</span>
-                  <strong style={{ color: result.amount_verified ? "#22c55e" : "#ef4444" }}>
-                    {result.amount_verified ? `✓ GHS ${result.expected_amount_ghs}` : `✗ Extracted: GHS ${result.detected_amount_ghs || "N/A"}`}
-                  </strong>
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>Status Check:</span>
-                  <strong style={{ color: result.payment_status_verified ? "#22c55e" : "#ef4444" }}>
-                    {result.payment_status_verified ? "✓ Completed" : "✗ Pending / Failed"}
-                  </strong>
-                </div>
-              </div>
-
-              {result.reason && (
-                <div style={{ marginTop: "1rem", padding: "10px 12px", borderRadius: "6px", background: result.verified ? "rgba(34, 197, 94, 0.1)" : "rgba(239, 68, 68, 0.1)", color: result.verified ? "#22c55e" : "#f87171", fontSize: "13px" }}>
-                  <strong>Note:</strong> {result.reason}
-                </div>
+            <Card className="verification-result" style={{ borderTop: `4px solid ${result.verified ? "#22c55e" : result.status === "Payment Verification Unavailable" ? "#f59e0b" : "#ef4444"}` }}>
+              {result.verified ? (
+                <>
+                  <Status>Verified</Status>
+                  <h2 style={{ marginTop: "12px", color: "#22c55e" }}>PAYMENT APPROVED ✓</h2>
+                  <div className="detail-list" style={{ marginTop: "1rem", textAlign: "left" }}>
+                    <div><dt>Recipient:</dt><dd style={{ color: "#22c55e" }}>Verified</dd></div>
+                    <div><dt>Amount:</dt><dd>GH₵ {result.expected_amount_ghs || amount}</dd></div>
+                    <div><dt>Payment:</dt><dd style={{ color: "#22c55e" }}>Verified</dd></div>
+                    <div><dt>Wallet:</dt><dd style={{ color: "#22c55e" }}>GH₵ {result.verified_amount ? result.verified_amount.toFixed(2) : result.expected_amount_ghs} credited</dd></div>
+                  </div>
+                  <div style={{ marginTop: "1.5rem" }}>
+                    <Button full onClick={() => go("orders")}>Continue to Orders</Button>
+                  </div>
+                </>
+              ) : result.status === "Payment Verification Unavailable" ? (
+                <>
+                  <Status>Unavailable</Status>
+                  <h2 style={{ marginTop: "12px", color: "#f59e0b" }}>PAYMENT VERIFICATION UNAVAILABLE</h2>
+                  <p style={{ fontSize: "14px", marginTop: "12px", lineHeight: "1.5", color: "var(--muted)" }}>
+                    We couldn't complete the payment verification right now. No money has been added to your wallet. Please try again.
+                  </p>
+                  <div style={{ marginTop: "1.5rem" }}>
+                    <Button full variant="secondary" onClick={() => { setUploadState("idle"); setResult(null); }}>
+                      Try Again
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Status>Rejected</Status>
+                  <h2 style={{ marginTop: "12px", color: "#ef4444" }}>PAYMENT REJECTED ✕</h2>
+                  <div style={{ marginTop: "1rem", padding: "12px", borderRadius: "8px", background: "rgba(239, 68, 68, 0.1)", color: "#f87171", fontSize: "14px", textAlign: "left" }}>
+                    <strong>Reason:</strong> {result.reason || result.rejection_reason || "The uploaded payment does not show the required recipient."}
+                  </div>
+                  <p style={{ fontSize: "13px", color: "var(--muted)", marginTop: "12px" }}>No money was added to your wallet.</p>
+                  <div style={{ marginTop: "1.5rem" }}>
+                    <Button full variant="secondary" onClick={() => { setUploadState("idle"); setResult(null); }}>
+                      Upload New Screenshot
+                    </Button>
+                  </div>
+                </>
               )}
-
-              <div style={{ marginTop: "1.5rem" }}>
-                {result.verified ? (
-                  <Button full onClick={() => go("orders")}>Continue to Orders</Button>
-                ) : (
-                  <Button full variant="secondary" onClick={() => { setUploadState("idle"); setResult(null); }}>
-                    Upload New Screenshot
-                  </Button>
-                )}
-              </div>
             </Card>
           )}
         </div>

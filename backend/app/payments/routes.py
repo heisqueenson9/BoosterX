@@ -85,12 +85,13 @@ def upload_screenshot(payment_id: str):
         ai_result = PaymentAI.extract(saved_path, original_filename=file_storage.filename)
         decision = process_payment_verification(payment, ai_result)
     except Exception as exc:
-        payment.status = PaymentStatus.REJECTED
-        payment.rejection_reason = "Payment verification could not be completed. Please upload a clearer screenshot and try again."
+        current_app.logger.error(f"Payment verification AI extraction error: {exc}", exc_info=True)
+        payment.status = "Payment Verification Unavailable"
+        payment.rejection_reason = "We couldn't complete the payment verification right now. No money has been added to your wallet. Please try again."
         db.session.commit()
         return jsonify({
             "payment_id": payment.payment_id,
-            "status": PaymentStatus.REJECTED,
+            "status": "Payment Verification Unavailable",
             "verified": False,
             "recipient_verified": False,
             "amount_verified": False,
@@ -100,7 +101,7 @@ def upload_screenshot(payment_id: str):
             "reason": payment.rejection_reason,
             "expected_amount_ghs": f"{payment.amount_ghs:.2f}",
             "detected_amount_ghs": None,
-            "recipient": "0202979378 / Enock Queenson Eduafo",
+            "recipient": None,
             "reference": payment.transaction_reference,
             "rejection_reason": payment.rejection_reason,
         }), 200
@@ -120,7 +121,7 @@ def upload_screenshot(payment_id: str):
         "reason": payment.rejection_reason or ("Payment verified successfully" if decision == PaymentStatus.VERIFIED else "Payment verification failed."),
         "expected_amount_ghs": f"{payment.amount_ghs:.2f}",
         "detected_amount_ghs": f"{ai_result.amount:.2f}" if (ai_result and ai_result.amount is not None) else None,
-        "recipient": (ai_result.recipient_name or ai_result.recipient_number) if ai_result else "0202979378 / Enock Queenson Eduafo",
+        "recipient": (ai_result.recipient_name or ai_result.recipient_number) if ai_result else None,
         "reference": payment.transaction_reference or (ai_result.reference if ai_result else None),
         "rejection_reason": payment.rejection_reason,
         "checks_passed": pv.checks_passed if pv else [],
@@ -157,7 +158,7 @@ def get_payment(payment_id: str):
         "reason": payment.rejection_reason or ("Payment verified successfully" if payment.status == PaymentStatus.VERIFIED else "Payment verification failed."),
         "expected_amount_ghs": f"{payment.amount_ghs:.2f}",
         "detected_amount_ghs": f"{raw_ai.get('amount'):.2f}" if raw_ai.get("amount") is not None else None,
-        "recipient": raw_ai.get("recipient_name") or "0202979378 / Enock Queenson Eduafo",
+        "recipient": raw_ai.get("recipient_name") or raw_ai.get("recipient_number") or None,
         "reference": payment.transaction_reference or raw_ai.get("reference"),
         "rejection_reason": payment.rejection_reason,
         "created_at": payment.created_at.isoformat()

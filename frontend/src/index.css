@@ -411,10 +411,10 @@ dd { margin: 0; color: var(--text); font-weight: 600; text-align: right; }
   .bottom-nav button { border: 0; background: transparent; color: var(--muted); display: grid; place-items: center; gap: 3px; font-size: 9px; cursor: pointer; }
   .bottom-nav button.active { color: var(--text); }
   .bottom-nav button:nth-child(3) .icon { background: var(--inverse); color: var(--inverse-text); width: 34px; height: 34px; padding: 8px; border-radius: 9px; margin-top: -18px; }
-  .auth-page { grid-template-columns: 1fr; }
+  .auth-page { grid-template-columns: 1fr; width: 100%; min-height: 100vh; min-height: 100dvh; }
   .auth-brand { display: none; }
-  .auth-form { padding: 24px 16px; min-height: 100dvh; align-content: center; }
-  .auth-form .card { padding: 24px; }
-  .auth-mobile-logo { display: block; width: 150px; height: 50px; overflow: hidden; margin-bottom: 18px; }
-  .auth-mobile-logo img { width: 145px; height: auto; }
+  .auth-form { padding: 24px 16px; min-height: 100vh; min-height: 100dvh; width: 100%; align-content: center; box-sizing: border-box; }
+  .auth-form .card { width: 100%; max-width: 420px; margin: 0 auto; padding: 28px 20px; box-sizing: border-box; }
+  .auth-mobile-logo { display: block; width: 100%; max-width: 220px; height: auto; overflow: visible; margin: 0 auto 24px; text-align: center; }
+  .auth-mobile-logo img { width: 100%; max-width: 190px; height: auto; display: block; margin: 0 auto; }
 }
