@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional, Tuple, Dict, List, Union, Any
 from backend.app.providers.provider_client import ProviderService, ProviderOrderStatus, ProviderError
 
@@ -89,4 +90,16 @@ class FakeProvider:
             "currency": self.currency,
             "service_count": len(self.get_services()),
             "error": None
+        }
+
+    def check_provider_health(self) -> Dict[str, Any]:
+        return {
+            "provider": "SMM Africa",
+            "status": "CONNECTED",
+            "apiReachable": True,
+            "authenticated": True,
+            "lastChecked": datetime.now(timezone.utc).isoformat(),
+            "servicesSync": "Healthy",
+            "providerBalance": f"Available ({self.balance:.2f} {self.currency})",
+            "reason": None
         }

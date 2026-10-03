@@ -604,20 +604,16 @@ def get_system_health():
         db_ok = False
         db_err = str(exc)
 
-    prov_ok = True
-    prov_err = None
-    try:
-        get_provider_client().get_provider_balance()
-    except Exception as exc:
-        prov_ok = False
-        prov_err = str(exc)
+    provider_health = get_provider_client().check_provider_health()
 
-    status_str = "HEALTHY" if (db_ok and prov_ok) else "DEGRADED"
+    status_str = "HEALTHY" if (db_ok and provider_health.get("status") == "CONNECTED") else (
+        "DEGRADED" if (db_ok and provider_health.get("status") in ("DEGRADED", "NOT_CONFIGURED")) else "ERROR"
+    )
 
     return jsonify({
         "status": status_str,
-        "database": {"status": "ok" if db_ok else "error", "message": db_err},
-        "provider": {"status": "ok" if prov_ok else "error", "message": prov_err},
+        "database": {"status": "CONNECTED" if db_ok else "ERROR", "message": db_err},
+        "provider": provider_health,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }), 200
 

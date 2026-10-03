@@ -424,11 +424,23 @@ export function AdminConfigPage({ type }: { type: string }) {
   const [markup, setMarkup] = useState("5.00");
   const [msg, setMsg] = useState("");
 
+  const [healthLoading, setHealthLoading] = useState(false);
+
+  const fetchHealth = () => {
+    setHealthLoading(true);
+    api.getAdminHealth()
+      .then(setHealth)
+      .catch(() => {})
+      .finally(() => setHealthLoading(false));
+  };
+
   useEffect(() => {
     if (type === "audit") {
       api.getAdminAuditLogs().then(res => setAuditLogs(res.audit_logs)).catch(() => {});
     } else if (type === "health") {
-      api.getAdminHealth().then(setHealth).catch(() => {});
+      fetchHealth();
+      const interval = setInterval(fetchHealth, 30000);
+      return () => clearInterval(interval);
     } else if (type === "pricing") {
       api.getAdminPricing().then(res => {
         setRate(res.usd_to_ghs_rate);
@@ -486,17 +498,87 @@ export function AdminConfigPage({ type }: { type: string }) {
   }
 
   if (type === "health") {
+    const provHealth = health?.provider || {};
+    const isConn = provHealth.status === "CONNECTED";
+    const isDegraded = provHealth.status === "DEGRADED";
+    const isNotConfig = provHealth.status === "NOT_CONFIGURED";
+    
+    const statusLabel = isConn ? "Connected" : (
+      isDegraded ? "Degraded" : (
+        isNotConfig ? "Not Configured" : (
+          provHealth.status === "DISCONNECTED" ? "Disconnected" : "Error"
+        )
+      )
+    );
+
+    const overallStatusLabel = health?.status === "HEALTHY" ? "Healthy" : (
+      health?.status === "DEGRADED" ? "Degraded" : "Error"
+    );
+
     return (
       <div className="admin-page">
-        <PageTitle title="System Health" description="Live status of database and provider services." />
+        <PageTitle
+          title="System Health"
+          description="Live status of database and SMM Africa provider services."
+          action={
+            <Button
+              variant="secondary"
+              icon="clock"
+              onClick={fetchHealth}
+              disabled={healthLoading}
+            >
+              {healthLoading ? "Checking..." : "Refresh Health"}
+            </Button>
+          }
+        />
 
         <Card>
-          <h2>Overall Status: <Status>{health?.status === "ok" ? "Completed" : "Cancelled"}</Status></h2>
+          <div className="card-head">
+            <div>
+              <span className="eyebrow">Overall System Health</span>
+              <h2>Status: <Status>{overallStatusLabel}</Status></h2>
+            </div>
+          </div>
           <dl className="detail-list">
-            <div><dt>Database</dt><dd><Status>{health?.database?.status === "ok" ? "Completed" : "Cancelled"}</Status></dd></div>
-            <div><dt>Provider API</dt><dd><Status>{health?.provider?.status === "ok" ? "Completed" : "Cancelled"}</Status></dd></div>
-            <div><dt>Timestamp</dt><dd>{health?.timestamp ? new Date(health.timestamp).toLocaleString() : "N/A"}</dd></div>
+            <div>
+              <dt>Database Service</dt>
+              <dd><Status>{health?.database?.status === "CONNECTED" || health?.database?.status === "ok" ? "Connected" : "Error"}</Status></dd>
+            </div>
+            <div>
+              <dt>Provider Name</dt>
+              <dd><strong>{provHealth.provider || "SMM Africa"}</strong></dd>
+            </div>
+            <div>
+              <dt>Provider API Connection</dt>
+              <dd><Status>{statusLabel}</Status></dd>
+            </div>
+            <div>
+              <dt>API Reachability</dt>
+              <dd><Status>{provHealth.apiReachable ? "Online" : "Offline"}</Status></dd>
+            </div>
+            <div>
+              <dt>Authentication Status</dt>
+              <dd><Status>{provHealth.authenticated ? "Valid" : (isNotConfig ? "Not Configured" : "Invalid")}</Status></dd>
+            </div>
+            <div>
+              <dt>Services Catalog Sync</dt>
+              <dd><Status>{provHealth.servicesSync || "Healthy"}</Status></dd>
+            </div>
+            <div>
+              <dt>Provider Balance</dt>
+              <dd><strong>{provHealth.providerBalance || "Unable to Check"}</strong></dd>
+            </div>
+            <div>
+              <dt>Last Checked</dt>
+              <dd>{provHealth.lastChecked ? new Date(provHealth.lastChecked).toLocaleString() : (health?.timestamp ? new Date(health.timestamp).toLocaleString() : "N/A")}</dd>
+            </div>
           </dl>
+
+          {provHealth.reason && (
+            <div className="payment-warning" style={{ marginTop: "16px" }}>
+              <strong>Health Diagnostic:</strong> {provHealth.reason}
+            </div>
+          )}
         </Card>
       </div>
     );

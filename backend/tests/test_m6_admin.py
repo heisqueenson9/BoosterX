@@ -124,3 +124,17 @@ def test_no_endpoint_creates_admin_accounts(client, admin_login):
     csrf = admin_login(client)["X-CSRF-Token"]
     res = client.post("/api/admin/admins", json={"email": "x@y.com", "password": "Password123!"}, headers={"X-CSRF-Token": csrf})
     assert res.status_code in (404, 405)
+
+def test_system_health_provider_statuses(client, app, admin_login):
+    csrf = admin_login(client)["X-CSRF-Token"]
+    res = client.get("/api/admin/system/health")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert "provider" in data
+    prov = data["provider"]
+    assert prov["provider"] == "SMM Africa"
+    assert prov["status"] in ("CONNECTED", "DEGRADED", "DISCONNECTED", "NOT_CONFIGURED", "ERROR")
+    assert prov["status"] != "CANCELLED"
+    assert "apiReachable" in prov
+    assert "authenticated" in prov
+    assert "apiKey" not in prov  # ensure secret key is not exposed in health response

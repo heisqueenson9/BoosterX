@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -89,10 +90,10 @@ class ProviderAdapter:
         max_retries: int = 2,
         retry_backoff_seconds: float = 1.5,
     ):
-        if not api_url or not api_key:
-            raise ValueError("ProviderAdapter requires api_url and api_key")
+        if not api_url:
+            raise ValueError("ProviderAdapter requires api_url")
         self._api_url = api_url.rstrip("/")
-        self._api_key = api_key
+        self._api_key = api_key or ""
         self._timeout = timeout_seconds
         self._max_retries = max_retries
         self._retry_backoff = retry_backoff_seconds
@@ -279,6 +280,79 @@ class ProviderAdapter:
                 "service_count": 0,
                 "error": str(exc)
             }
+
+    def check_provider_health(self) -> dict[str, Any]:
+        """
+        Diagnoses provider API health using read-only API calls (balance and services).
+        Never exposes the API key or sensitive credentials.
+        """
+        now_iso = datetime.now(timezone.utc).isoformat()
+        if not self._api_key or not self._api_key.strip():
+            return {
+                "provider": "SMM Africa",
+                "status": "NOT_CONFIGURED",
+                "apiReachable": False,
+                "authenticated": False,
+                "lastChecked": now_iso,
+                "servicesSync": "Error",
+                "providerBalance": "Unable to Check",
+                "reason": "API key is missing in backend environment",
+            }
+
+        bal_ok = False
+        bal_str = "Unable to Check"
+        services_ok = False
+        last_err = None
+
+        # 1. Test balance endpoint
+        try:
+            bal, curr = self.get_provider_balance()
+            bal_ok = True
+            bal_str = f"Available ({bal:.2f} {curr})" if bal > 0 else "Insufficient"
+        except ProviderError as exc:
+            last_err = str(exc)
+        except Exception as exc:
+            last_err = f"Endpoint unreachable: {exc}"
+
+        # 2. Test services catalog endpoint
+        try:
+            services = self.get_services()
+            services_ok = True
+        except Exception as exc:
+            if not last_err:
+                last_err = str(exc)
+
+        if bal_ok and services_ok:
+            status = "CONNECTED"
+            api_reachable = True
+            authenticated = True
+            reason = None
+        elif bal_ok or services_ok:
+            status = "DEGRADED"
+            api_reachable = True
+            authenticated = True
+            reason = f"Partial service availability: {last_err}" if last_err else "Partial API degradation"
+        elif last_err and any(k in last_err.lower() for k in ("unreachable", "timeout", "connection", "connect")):
+            status = "DISCONNECTED"
+            api_reachable = False
+            authenticated = False
+            reason = "Provider endpoint unreachable"
+        else:
+            status = "ERROR"
+            api_reachable = True
+            authenticated = False
+            reason = last_err or "Authentication or API request failed"
+
+        return {
+            "provider": "SMM Africa",
+            "status": status,
+            "apiReachable": api_reachable,
+            "authenticated": authenticated,
+            "lastChecked": now_iso,
+            "servicesSync": "Healthy" if services_ok else "Error",
+            "providerBalance": bal_str,
+            "reason": reason,
+        }
 
     # ------------------------------------------------------------------ #
     # Helpers
