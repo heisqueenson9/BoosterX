@@ -94,7 +94,7 @@ class FakeProvider:
 
     def check_provider_health(self) -> Dict[str, Any]:
         return {
-            "provider": "SMM Africa",
+            "provider": "BaloonBoost",
             "status": "CONNECTED",
             "apiReachable": True,
             "authenticated": True,

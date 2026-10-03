@@ -546,7 +546,7 @@ export function AdminConfigPage({ type }: { type: string }) {
             </div>
             <div>
               <dt>Provider Name</dt>
-              <dd><strong>{provHealth.provider || "SMM Africa"}</strong></dd>
+              <dd><strong>{provHealth.provider || "BaloonBoost"}</strong></dd>
             </div>
             <div>
               <dt>Provider API Connection</dt>

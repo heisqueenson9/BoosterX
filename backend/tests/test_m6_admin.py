@@ -132,7 +132,7 @@ def test_system_health_provider_statuses(client, app, admin_login):
     data = res.get_json()
     assert "provider" in data
     prov = data["provider"]
-    assert prov["provider"] == "SMM Africa"
+    assert prov["provider"] in ("BaloonBoost", "SMM Africa")
     assert prov["status"] in ("CONNECTED", "DEGRADED", "DISCONNECTED", "NOT_CONFIGURED", "ERROR")
     assert prov["status"] != "CANCELLED"
     assert "apiReachable" in prov
