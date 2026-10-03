@@ -87,7 +87,138 @@ class PaymentAI:
     def _mock_extract(filename: str, image_path: str) -> PaymentAIExtraction:
         """Mock AI vision extraction for dev/tests based on test patterns."""
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        if "reject" in filename:
+        fn = filename.lower()
+        if "test1_phone" in fn:
+            return PaymentAIExtraction(
+                amount=20.0,
+                currency="GHS",
+                recipient_name=None,
+                recipient_number="0202979378",
+                reference="TX100001",
+                status="Successful",
+                datetime=now_str,
+                provider="Telecel",
+                confidence=0.98,
+                integrity_flags=[]
+            )
+        elif "test2_name" in fn:
+            return PaymentAIExtraction(
+                amount=100.0,
+                currency="GHS",
+                recipient_name="Enock Queenson Eduafo",
+                recipient_number=None,
+                reference="TX100002",
+                status="Successful",
+                datetime=now_str,
+                provider="Telecel",
+                confidence=0.98,
+                integrity_flags=[]
+            )
+        elif "test3_missing" in fn:
+            return PaymentAIExtraction(
+                amount=20.0,
+                currency="GHS",
+                recipient_name=None,
+                recipient_number=None,
+                reference="TX100003",
+                status="Successful",
+                datetime=now_str,
+                provider="Telecel",
+                confidence=0.95,
+                integrity_flags=[]
+            )
+        elif "test4_wrong_phone" in fn:
+            return PaymentAIExtraction(
+                amount=20.0,
+                currency="GHS",
+                recipient_name=None,
+                recipient_number="0240000000",
+                reference="TX100004",
+                status="Successful",
+                datetime=now_str,
+                provider="MTN",
+                confidence=0.95,
+                integrity_flags=[]
+            )
+        elif "test5_wrong_name" in fn:
+            return PaymentAIExtraction(
+                amount=20.0,
+                currency="GHS",
+                recipient_name="Wrong Person Name",
+                recipient_number=None,
+                reference="TX100005",
+                status="Successful",
+                datetime=now_str,
+                provider="Telecel",
+                confidence=0.95,
+                integrity_flags=[]
+            )
+        elif "test6_mismatch" in fn:
+            return PaymentAIExtraction(
+                amount=20.0,
+                currency="GHS",
+                recipient_name="Enock Queenson Eduafo",
+                recipient_number="0202979378",
+                reference="TX100006",
+                status="Successful",
+                datetime=now_str,
+                provider="Telecel",
+                confidence=0.98,
+                integrity_flags=[]
+            )
+        elif "test7_dup" in fn:
+            return PaymentAIExtraction(
+                amount=20.0,
+                currency="GHS",
+                recipient_name="Enock Queenson Eduafo",
+                recipient_number="0202979378",
+                reference="TXDUP777",
+                status="Successful",
+                datetime=now_str,
+                provider="Telecel",
+                confidence=0.98,
+                integrity_flags=[]
+            )
+        elif "test8_fake" in fn or "fake" in fn:
+            return PaymentAIExtraction(
+                amount=None,
+                currency="GHS",
+                recipient_name=None,
+                recipient_number=None,
+                reference=None,
+                status="Failed",
+                datetime=now_str,
+                provider="Unknown",
+                confidence=0.1,
+                integrity_flags=["unreadable"]
+            )
+        elif "test9_phone_no_proof" in fn:
+            return PaymentAIExtraction(
+                amount=None,
+                currency="GHS",
+                recipient_name=None,
+                recipient_number="0202979378",
+                reference=None,
+                status="Pending",
+                datetime=now_str,
+                provider="Telecel",
+                confidence=0.6,
+                integrity_flags=[]
+            )
+        elif "test10_another" in fn:
+            return PaymentAIExtraction(
+                amount=50.0,
+                currency="GHS",
+                recipient_name="Kofi Mensah",
+                recipient_number="0551112222",
+                reference="TX100010",
+                status="Successful",
+                datetime=now_str,
+                provider="MTN",
+                confidence=0.95,
+                integrity_flags=[]
+            )
+        elif "reject" in fn:
             return PaymentAIExtraction(
                 amount=10.0,
                 currency="GHS",
@@ -100,11 +231,11 @@ class PaymentAI:
                 confidence=0.95,
                 integrity_flags=[]
             )
-        elif "expired" in filename:
+        elif "expired" in fn:
             return PaymentAIExtraction(
                 amount=100.0,
                 currency="GHS",
-                recipient_name="BOOSTX",
+                recipient_name="Enock Queenson Eduafo",
                 recipient_number="0202979378",
                 reference="TX100200",
                 status="Successful",
@@ -113,11 +244,11 @@ class PaymentAI:
                 confidence=0.95,
                 integrity_flags=[]
             )
-        elif "doctored" in filename or "manipulated" in filename:
+        elif "doctored" in fn or "manipulated" in fn:
             return PaymentAIExtraction(
                 amount=100.0,
                 currency="GHS",
-                recipient_name="BOOSTX",
+                recipient_name="Enock Queenson Eduafo",
                 recipient_number="0202979378",
                 reference="TX100300",
                 status="Successful",
@@ -126,11 +257,11 @@ class PaymentAI:
                 confidence=0.95,
                 integrity_flags=["doctored"]
             )
-        elif "invalid_ref" in filename:
+        elif "invalid_ref" in fn:
             return PaymentAIExtraction(
                 amount=100.0,
                 currency="GHS",
-                recipient_name="BOOSTX",
+                recipient_name="Enock Queenson Eduafo",
                 recipient_number="0202979378",
                 reference="BAD REF #!$",
                 status="Successful",
@@ -139,11 +270,11 @@ class PaymentAI:
                 confidence=0.95,
                 integrity_flags=[]
             )
-        elif "review" in filename:
+        elif "review" in fn:
             return PaymentAIExtraction(
                 amount=500.0,
                 currency="GHS",
-                recipient_name="BOOSTX",
+                recipient_name="Enock Queenson Eduafo",
                 recipient_number="0202979378",
                 reference="TX999999",
                 status="Successful",
@@ -152,11 +283,11 @@ class PaymentAI:
                 confidence=0.60,
                 integrity_flags=["low_confidence"]
             )
-        elif "mismatch" in filename:
+        elif "mismatch" in fn:
             return PaymentAIExtraction(
                 amount=50.0,
                 currency="GHS",
-                recipient_name="BOOSTX",
+                recipient_name="Enock Queenson Eduafo",
                 recipient_number="0202979378",
                 reference="TX804188",
                 status="Successful",
@@ -170,9 +301,9 @@ class PaymentAI:
             return PaymentAIExtraction(
                 amount=100.0,
                 currency="GHS",
-                recipient_name="BOOSTX",
+                recipient_name="Enock Queenson Eduafo",
                 recipient_number="0202979378",
-                reference=f"TX{os.getpid()}{hash(filename) % 10000:04d}",
+                reference=f"TX{os.getpid()}{abs(hash(filename)) % 10000:04d}",
                 status="Successful",
                 datetime=now_str,
                 provider="Telecel",

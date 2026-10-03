@@ -694,22 +694,85 @@ function Auth({ mode, go, onAuthed, notice }: { mode: "login" | "register"; go: 
     }
   };
 
-  return <div className="auth-page"><div className="auth-brand"><img src={logo} alt="BoostX"/><div><span className="eyebrow">Social growth, simplified</span><h1>Build momentum.<br/>Reach more people.</h1></div></div>
-    <div className="auth-form"><Card>
-      <h2>{mode === "login" ? "Sign in to BoostX" : "Create your BoostX account"}</h2>
-      {notice && mode === "login" && <div className="payment-warning auth-notice" role="status"><strong>{notice}</strong></div>}
-      <form onSubmit={handleSubmit} noValidate>
-        {mode === "register" && <Field label="Full name" value={values.fullName} onChange={set("fullName")} autoComplete="name" error={fieldErrors.fullName} disabled={loading}/>}
-        <Field label={mode === "login" ? "Email or phone" : "Email address"} type={mode === "login" ? "text" : "email"} value={values.identifier} onChange={set("identifier")} autoComplete={mode === "login" ? "username" : "email"} error={fieldErrors.identifier} disabled={loading}/>
-        <PasswordField label="Password" value={values.password} onChange={set("password")} autoComplete={mode === "login" ? "current-password" : "new-password"} error={fieldErrors.password} disabled={loading}/>
-        {mode === "register" && <PasswordField label="Confirm password" value={values.confirmPassword} onChange={set("confirmPassword")} autoComplete="new-password" error={fieldErrors.confirmPassword} disabled={loading}/>}
-        {mode === "register" && <small className="field-hint">At least 8 characters, with letters and numbers.</small>}
-        {error && <div className="payment-warning" role="alert" style={{ margin: "1rem 0" }}><strong>{error}</strong></div>}
-        <Button full type="submit" disabled={loading}>{loading ? (mode === "login" ? "Signing in..." : "Creating account...") : mode === "login" ? "Sign in" : "Create account"}</Button>
-      </form>
-      <div className="auth-switch">{mode === "login" ? "New to BoostX?" : "Already have an account?"}<button type="button" onClick={() => go(mode === "login" ? "register" : "login")}>{mode === "login" ? "Create an account" : "Sign in"}</button></div>
-    </Card></div>
+  return <div className="auth-page">
+    <div className="auth-brand">
+      <div className="auth-brand-logo-area">
+        <img src={logo} alt="BoostX" className="auth-brand-logo-centered" width="320" height="100" />
+      </div>
+      <div>
+        <span className="eyebrow" style={{ color: "#a3a3a3" }}>Social growth, simplified</span>
+        <h1>Build momentum.<br/>Reach more people.</h1>
+        <p>Account-based social media boosting panel built specifically for Ghana.</p>
+      </div>
+      <small>© {new Date().getFullYear()} BoostX. All rights reserved.</small>
+    </div>
+    <div className="auth-form">
+      <div className="auth-mobile-logo">
+        <img src={logo} alt="BoostX" width="180" height="56" />
+      </div>
+      <Card>
+        <h2>{mode === "login" ? "Sign in to BoostX" : "Create your BoostX account"}</h2>
+        {notice && mode === "login" && <div className="payment-warning auth-notice" role="status"><strong>{notice}</strong></div>}
+        <form onSubmit={handleSubmit} noValidate>
+          {mode === "register" && <Field label="Full name" value={values.fullName} onChange={set("fullName")} autoComplete="name" error={fieldErrors.fullName} disabled={loading}/>}
+          <Field label={mode === "login" ? "Email or phone" : "Email address"} type={mode === "login" ? "text" : "email"} value={values.identifier} onChange={set("identifier")} autoComplete={mode === "login" ? "username" : "email"} error={fieldErrors.identifier} disabled={loading}/>
+          <PasswordField label="Password" value={values.password} onChange={set("password")} autoComplete={mode === "login" ? "current-password" : "new-password"} error={fieldErrors.password} disabled={loading}/>
+          {mode === "register" && <PasswordField label="Confirm password" value={values.confirmPassword} onChange={set("confirmPassword")} autoComplete="new-password" error={fieldErrors.confirmPassword} disabled={loading}/>}
+          {mode === "register" && <small className="field-hint">At least 8 characters, with letters and numbers.</small>}
+          {error && <div className="payment-warning" role="alert" style={{ margin: "1rem 0" }}><strong>{error}</strong></div>}
+          <Button full type="submit" disabled={loading}>{loading ? (mode === "login" ? "Signing in..." : "Creating account...") : mode === "login" ? "Sign in" : "Create account"}</Button>
+        </form>
+        <div className="auth-switch">{mode === "login" ? "New to BoostX?" : "Already have an account?"}<button type="button" onClick={() => go(mode === "login" ? "register" : "login")}>{mode === "login" ? "Create an account" : "Sign in"}</button></div>
+      </Card>
+    </div>
   </div>;
+}
+
+function LogoutModal({ isOpen, onClose, onConfirm }: { isOpen: boolean; onClose: () => void; onConfirm: () => Promise<void> | void }) {
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const handleConfirm = async () => {
+    setLoading(true);
+    try {
+      await onConfirm();
+    } finally {
+      setLoading(false);
+      onClose();
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="logout-dialog-title">
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close dialog">
+          <Icon name="close" />
+        </button>
+        <h2 id="logout-dialog-title" style={{ marginTop: 0, marginBottom: "8px" }}>Do you want to logout?</h2>
+        <p style={{ color: "var(--muted)", marginBottom: "24px", fontSize: "14px", lineHeight: "1.5" }}>
+          You will be signed out of your session and redirected to the login page.
+        </p>
+        <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+          <Button variant="secondary" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleConfirm} disabled={loading}>
+            {loading ? "Signing out..." : "Yes, Logout"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const adminNavGroups = [
@@ -719,13 +782,13 @@ const adminNavGroups = [
 
 function Shell({ page, go, children, dark, setDark, user, onLoggedOut }: { page: string; go: (page: string) => void; children: ReactNode; dark: boolean; setDark: (v: boolean) => void; user: UserInfo; onLoggedOut: () => void }) {
   const [open, setOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const isAdmin = user.role === "admin";
-  const handleLogout = async () => {
+
+  const performLogout = async () => {
     try {
       await api.logout();
     } catch (err: any) {
-      // 401 means the session is already gone. Anything else (network/server)
-      // means the server session may still be valid, so don't pretend we signed out.
       if (err?.status !== 401) {
         alert("We couldn't sign you out. Please check your connection and try again.");
         return;
@@ -737,7 +800,9 @@ function Shell({ page, go, children, dark, setDark, user, onLoggedOut }: { page:
 
   const activeGroups = isAdmin ? adminNavGroups : navGroups;
 
-  return <div className="app-shell" data-admin={isAdmin ? "true" : undefined}><aside className={open ? "open" : ""}><div className="sidebar-logo"><img src={logo} alt="BoostX"/><button onClick={() => setOpen(false)}><Icon name="close"/></button></div><nav>{activeGroups.map(g => <div className="nav-group" key={g.label}><span>{g.label}</span>{g.links.map(([id,label,icon]) => <button className={page === id ? "active" : ""} onClick={() => { go(id); setOpen(false); }} key={id}><Icon name={icon as IconName}/>{label}</button>)}</div>)}</nav><div className="sidebar-bottom"><button onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"}/>{dark ? "Light mode" : "Dark mode"}</button><button onClick={handleLogout}><Icon name="logout"/>Log out</button></div></aside>{open && <button className="drawer-backdrop" onClick={() => setOpen(false)} aria-label="Close menu"/>}
+  return <div className="app-shell" data-admin={isAdmin ? "true" : undefined}>
+    <LogoutModal isOpen={showLogoutModal} onClose={() => setShowLogoutModal(false)} onConfirm={performLogout} />
+    <aside className={open ? "open" : ""}><div className="sidebar-logo"><img src={logo} alt="BoostX"/><button onClick={() => setOpen(false)}><Icon name="close"/></button></div><nav>{activeGroups.map(g => <div className="nav-group" key={g.label}><span>{g.label}</span>{g.links.map(([id,label,icon]) => <button className={page === id ? "active" : ""} onClick={() => { go(id); setOpen(false); }} key={id}><Icon name={icon as IconName}/>{label}</button>)}</div>)}</nav><div className="sidebar-bottom"><button onClick={() => setDark(!dark)}><Icon name={dark ? "sun" : "moon"}/>{dark ? "Light mode" : "Dark mode"}</button><button onClick={() => setShowLogoutModal(true)}><Icon name="logout"/>Log out</button></div></aside>{open && <button className="drawer-backdrop" onClick={() => setOpen(false)} aria-label="Close menu"/>}
     <div className="main"><header><button className="mobile-menu" onClick={() => setOpen(true)}><Icon name="menu"/></button><div className="top-search"><Icon name="search"/><input placeholder="Search orders, services..."/></div><div className="top-actions"><button className="user-menu" onClick={() => go(isAdmin ? "admin" : "profile")}><span className="avatar">{(user.full_name || user.email || "BX").substring(0, 2).toUpperCase()}</span><span><strong>{user.full_name || user.email}</strong><small>{isAdmin ? "Administrator" : "Customer"}</small></span></button></div></header><main>{children}</main></div>
   </div>;
 }

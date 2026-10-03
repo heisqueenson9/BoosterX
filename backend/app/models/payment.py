@@ -23,6 +23,7 @@ class Payment(db.Model):
     amount_ghs = db.Column(db.Numeric(10, 2), nullable=False)
     status = db.Column(db.String(30), nullable=False, default=PaymentStatus.IDLE)
     screenshot_filename = db.Column(db.String(255), nullable=True)
+    file_hash = db.Column(db.String(64), nullable=True, index=True)
     transaction_reference = db.Column(db.String(100), nullable=True, index=True)
     attempt_count = db.Column(db.Integer, nullable=False, default=0)
     rejection_reason = db.Column(db.Text, nullable=True)

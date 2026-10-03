@@ -27,12 +27,12 @@ def create_app(config_class=Config):
         raise RuntimeError("SECRET_KEY must be set to a private random value in non-testing environments.")
 
     # In production / non-testing environments, enforce Postgres requirement for row locking
-    if not app.config.get("TESTING"):
+    if not app.config.get("TESTING") and not os.getenv("ALLOW_SQLITE", "false").lower() in ("true", "1"):
         db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
         if not db_uri.startswith("postgresql://"):
             raise RuntimeError(
                 "DATABASE_URL must be a PostgreSQL connection string (postgresql://) in non-testing environments. "
-                "SQLite does not support row-level locking (SELECT FOR UPDATE)."
+                "SQLite does not support row-level locking (SELECT FOR UPDATE). Set ALLOW_SQLITE=true to bypass for local dev."
             )
 
     # Initialize extensions
@@ -81,6 +81,10 @@ def create_app(config_class=Config):
     app.register_blueprint(payments_bp)
     app.register_blueprint(orders_bp)
     app.register_blueprint(admin_bp)
+
+    @app.route("/health", methods=["GET"])
+    def health_check():
+        return jsonify({"status": "ok"}), 200
 
     # Serve built React SPA & hash routing fallback
     @app.route("/", defaults={"path": ""})

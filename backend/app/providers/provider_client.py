@@ -287,10 +287,9 @@ class ProviderAdapter:
         Never exposes the API key or sensitive credentials.
         """
         now_iso = datetime.now(timezone.utc).isoformat()
-        prov_name = "BaloonBoost" if "baloonboost" in self._api_url.lower() else "BaloonBoost"
         if not self._api_key or not self._api_key.strip():
             return {
-                "provider": prov_name,
+                "provider": "SMM Africa",
                 "status": "NOT_CONFIGURED",
                 "apiReachable": False,
                 "authenticated": False,
@@ -345,7 +344,7 @@ class ProviderAdapter:
             reason = last_err or "Authentication or API request failed"
 
         return {
-            "provider": prov_name,
+            "provider": "SMM Africa",
             "status": status,
             "apiReachable": api_reachable,
             "authenticated": authenticated,

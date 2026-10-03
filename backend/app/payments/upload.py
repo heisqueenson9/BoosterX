@@ -1,5 +1,6 @@
 import os
 import secrets
+import hashlib
 from io import BytesIO
 from PIL import Image
 from flask import current_app
@@ -19,7 +20,7 @@ class UploadError(ValueError):
 def validate_and_save_screenshot(payment: Payment, file_storage) -> str:
     """
     Validates magic bytes, file size, pixel limit, re-encodes image to WEBP using Pillow,
-    strips EXIF and payloads, and saves to private UPLOAD_FOLDER with random filename.
+    strips EXIF and payloads, calculates SHA256 file_hash, and saves to UPLOAD_FOLDER.
     """
     if payment.attempt_count >= 5:
         raise UploadError("Maximum upload attempts reached for this payment.")
@@ -60,6 +61,9 @@ def validate_and_save_screenshot(payment: Payment, file_storage) -> str:
     width, height = img.size
     if width * height > MAX_PIXELS:
         raise UploadError("Image resolution exceeds maximum allowed limit.")
+
+    # Calculate file hash for duplicate screenshot detection
+    payment.file_hash = hashlib.sha256(file_bytes).hexdigest()
 
     # Convert to RGB/RGBA and re-encode to WEBP to strip EXIF and hidden payloads
     if img.mode not in ("RGB", "RGBA"):

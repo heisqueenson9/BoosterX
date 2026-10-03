@@ -88,15 +88,24 @@ def upload_screenshot(payment_id: str):
 
     pv = PaymentVerification.query.filter_by(payment_id=payment.id).order_by(PaymentVerification.id.desc()).first()
 
-    resp = make_response(jsonify({
+    resp_data = {
         "payment_id": payment.payment_id,
         "status": decision,
+        "verified": decision == PaymentStatus.VERIFIED,
+        "recipient_verified": "recipient_matched" in (pv.checks_passed if pv else []),
+        "amount_verified": "amount_exact" in (pv.checks_passed if pv else []),
+        "payment_status_verified": "status_successful" in (pv.checks_passed if pv else []),
+        "duplicate": any(c in (pv.checks_failed if pv else []) for c in ("duplicate_reference", "duplicate_file_hash")),
+        "verified_amount": float(ai_result.amount) if (decision == PaymentStatus.VERIFIED and ai_result.amount is not None) else None,
+        "reason": payment.rejection_reason or ("Payment verified successfully" if decision == PaymentStatus.VERIFIED else "Payment verification failed."),
         "expected_amount_ghs": f"{payment.amount_ghs:.2f}",
         "detected_amount_ghs": f"{ai_result.amount:.2f}" if ai_result.amount is not None else None,
-        "recipient": ai_result.recipient_name or "BOOSTX",
+        "recipient": ai_result.recipient_name or "0202979378 / Enock Queenson Eduafo",
         "reference": payment.transaction_reference,
         "rejection_reason": payment.rejection_reason,
-    }), 200)
+    }
+
+    resp = make_response(jsonify(resp_data), 200)
 
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return resp
@@ -111,13 +120,22 @@ def get_payment(payment_id: str):
 
     pv = PaymentVerification.query.filter_by(payment_id=payment.id).order_by(PaymentVerification.id.desc()).first()
     raw_ai = pv.raw_ai_json if pv else {}
+    passed = pv.checks_passed if pv else []
+    failed = pv.checks_failed if pv else []
 
     resp = make_response(jsonify({
         "payment_id": payment.payment_id,
         "status": payment.status,
+        "verified": payment.status == PaymentStatus.VERIFIED,
+        "recipient_verified": "recipient_matched" in passed,
+        "amount_verified": "amount_exact" in passed,
+        "payment_status_verified": "status_successful" in passed,
+        "duplicate": any(c in failed for c in ("duplicate_reference", "duplicate_file_hash")),
+        "verified_amount": float(raw_ai.get("amount")) if (payment.status == PaymentStatus.VERIFIED and raw_ai.get("amount") is not None) else None,
+        "reason": payment.rejection_reason or ("Payment verified successfully" if payment.status == PaymentStatus.VERIFIED else "Payment verification failed."),
         "expected_amount_ghs": f"{payment.amount_ghs:.2f}",
         "detected_amount_ghs": f"{raw_ai.get('amount'):.2f}" if raw_ai.get("amount") is not None else None,
-        "recipient": raw_ai.get("recipient_name") or "BOOSTX",
+        "recipient": raw_ai.get("recipient_name") or "0202979378 / Enock Queenson Eduafo",
         "reference": payment.transaction_reference or raw_ai.get("reference"),
         "rejection_reason": payment.rejection_reason,
         "created_at": payment.created_at.isoformat()
