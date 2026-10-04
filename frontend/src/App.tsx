@@ -412,7 +412,7 @@ function Payment({ go }: { go: (page: string) => void }) {
             </div>
 
             <div className="amounts" style={{ marginTop: "1rem" }}>
-              {["20", "50", "100", "200", "500"].map(a => (
+              {["20", "50", "100", "200", "500", "1000"].map(a => (
                 <button key={a} type="button" className={amount === a ? "selected" : ""} onClick={() => setAmount(a)}>
                   GH₵ {a}
                 </button>

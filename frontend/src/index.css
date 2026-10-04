@@ -201,7 +201,7 @@ dd { margin: 0; color: var(--text); font-weight: 600; text-align: right; }
 .balance-hero .secondary { background: var(--inverse-text); color: var(--inverse); }
 .balance-hero .ghost { color: var(--inverse-text); border: 1px solid var(--border-strong); }
 .mini-stats { grid-template-columns: repeat(3,1fr); }
-.amounts { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-top: 10px; }
+.amounts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
 .amounts button { justify-content: center; min-height: 42px; }
 .payment-layout { display: grid; grid-template-columns: minmax(0,1.45fr) minmax(320px,.65fr); gap: 18px; align-items: start; }
 .payment-main,.payment-side { display: grid; gap: 18px; }
