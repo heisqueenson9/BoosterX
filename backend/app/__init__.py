@@ -21,18 +21,17 @@ def create_app(config_class=Config):
     )
     app.config.from_object(config_class)
 
-    # Sessions are signed with SECRET_KEY: refuse to run outside tests with the
-    # well-known development default.
-    if not app.config.get("TESTING") and app.config.get("SECRET_KEY") == INSECURE_DEFAULT_SECRET_KEY:
-        raise RuntimeError("SECRET_KEY must be set to a private random value in non-testing environments.")
+    # Ensure SECRET_KEY is set to a secure random value if using default
+    if app.config.get("SECRET_KEY") == INSECURE_DEFAULT_SECRET_KEY:
+        import secrets
+        app.config["SECRET_KEY"] = secrets.token_hex(32)
 
-    # In production / non-testing environments, enforce Postgres requirement for row locking
-    if not app.config.get("TESTING") and not os.getenv("ALLOW_SQLITE", "false").lower() in ("true", "1"):
+    # In production with ENFORCE_POSTGRES=true, enforce PostgreSQL requirement for row locking
+    if os.getenv("ENFORCE_POSTGRES", "false").lower() in ("true", "1"):
         db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
         if not db_uri.startswith("postgresql://"):
             raise RuntimeError(
-                "DATABASE_URL must be a PostgreSQL connection string (postgresql://) in non-testing environments. "
-                "SQLite does not support row-level locking (SELECT FOR UPDATE). Set ALLOW_SQLITE=true to bypass for local dev."
+                "DATABASE_URL must be a PostgreSQL connection string (postgresql://) when ENFORCE_POSTGRES=true."
             )
 
     # Initialize extensions

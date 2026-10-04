@@ -24,9 +24,9 @@ const CREDENTIAL_ENDPOINTS = ["/api/auth/login", "/api/auth/register", "/api/aut
 
 function friendlyError(status: number, data: any): string {
   const serverMessage = typeof data?.error === "string" ? data.error : typeof data?.message === "string" ? data.message : "";
-  if (status >= 500) return "Something went wrong on our side. Please try again in a moment.";
-  if (status === 429) return serverMessage || "Too many attempts. Please wait a minute and try again.";
   if (serverMessage) return serverMessage;
+  if (status >= 500) return "Something went wrong on our side. Please try again in a moment.";
+  if (status === 429) return "Too many attempts. Please wait a minute and try again.";
   if (status === 401) return "Please sign in to continue.";
   if (status === 403) return "You don't have permission to do that.";
   return "The request could not be completed. Please try again.";

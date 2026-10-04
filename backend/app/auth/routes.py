@@ -104,13 +104,15 @@ def login():
             admin_email=current_app.config.get("ADMIN_EMAIL", ""),
             admin_password=current_app.config.get("ADMIN_PASSWORD", ""),
         )
+        csrf_tok = _start_session(result.user)
+        body = _user_payload(result.user, csrf_tok)
+        body["redirect_path"] = result.redirect_path
+        return jsonify(body), 200
     except AuthError as exc:
         return jsonify({"error": str(exc)}), 401
-
-    csrf_tok = _start_session(result.user)
-    body = _user_payload(result.user, csrf_tok)
-    body["redirect_path"] = result.redirect_path
-    return jsonify(body), 200
+    except Exception as exc:
+        current_app.logger.error(f"Login failed unexpectedly: {exc}", exc_info=True)
+        return jsonify({"error": "Unable to process login due to a server error. Please try again."}), 500
 
 
 @auth_bp.post("/auth/logout")
