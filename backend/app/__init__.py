@@ -21,10 +21,10 @@ def create_app(config_class=Config):
     )
     app.config.from_object(config_class)
 
-    # Ensure SECRET_KEY is set to a secure random value if using default
-    if app.config.get("SECRET_KEY") == INSECURE_DEFAULT_SECRET_KEY:
-        import secrets
-        app.config["SECRET_KEY"] = secrets.token_hex(32)
+    # Sessions are signed with SECRET_KEY: refuse to run outside tests with the
+    # well-known development default.
+    if not app.config.get("TESTING") and app.config.get("SECRET_KEY") == INSECURE_DEFAULT_SECRET_KEY:
+        raise RuntimeError("SECRET_KEY must be set to a private random value in non-testing environments.")
 
     # In production with ENFORCE_POSTGRES=true, enforce PostgreSQL requirement for row locking
     if os.getenv("ENFORCE_POSTGRES", "false").lower() in ("true", "1"):

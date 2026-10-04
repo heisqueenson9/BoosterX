@@ -9,7 +9,7 @@ INSECURE_DEFAULT_SECRET_KEY = "boostx-secret-key-change-in-production"
 
 class Config:
     TESTING = os.getenv("TESTING", "false").lower() in ("true", "1") or "pytest" in sys.modules
-    SECRET_KEY = os.getenv("SECRET_KEY") or INSECURE_DEFAULT_SECRET_KEY
+    SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
         f"sqlite:///{os.path.join(os.path.dirname(os.path.dirname(__file__)), 'boostx.db')}"
