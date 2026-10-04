@@ -148,6 +148,7 @@ export function AdminPaymentReview({ go }: { go: (page: string) => void }) {
   const [reason, setReason] = useState("");
   const [msg, setMsg] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [showReverseModal, setShowReverseModal] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(location.hash.split("?")[1] || "");
@@ -164,22 +165,30 @@ export function AdminPaymentReview({ go }: { go: (page: string) => void }) {
     try {
       const res = await api.adminVerifyPayment(payment.payment_id, reference || undefined);
       setMsg(res.message);
+      const updated = await api.getAdminPayments({ search: payment.payment_id });
+      if (updated.payments.length > 0) setPayment(updated.payments[0]);
     } catch (err: any) {
       setMsg(err.message || "Failed to approve payment");
     }
   };
 
-  const handleReject = async () => {
+  const handleReverseConfirm = async () => {
     if (!payment) return;
+    setShowReverseModal(false);
     try {
-      const res = await api.adminRejectPayment(payment.payment_id, reason || undefined);
+      const res = await api.adminReversePayment(payment.payment_id, reason || undefined);
       setMsg(res.message);
+      const updated = await api.getAdminPayments({ search: payment.payment_id });
+      if (updated.payments.length > 0) setPayment(updated.payments[0]);
     } catch (err: any) {
-      setMsg(err.message || "Failed to reject payment");
+      setMsg(err.message || "Failed to reverse payment");
     }
   };
 
   if (!payment) return <Card><p>Loading payment details...</p></Card>;
+
+  const isApproved = payment.status === "Verified" || payment.status === "Approved" || payment.status === "ADMIN_APPROVED";
+  const isReversed = payment.status === "ADMIN_REVERSED";
 
   return (
     <div className="admin-page">
@@ -212,16 +221,40 @@ export function AdminPaymentReview({ go }: { go: (page: string) => void }) {
         </Card>
 
         <Card>
-          <h2>Admin Decision</h2>
-          <Field label="Override Reference (optional)" value={reference} onChange={setReference} placeholder="MANUAL-REF-123" />
-          <Field label="Rejection Reason (optional)" value={reason} onChange={setReason} placeholder="Unclear screenshot" />
-          {msg && <div className="payment-warning"><strong>{msg}</strong></div>}
-          <div className="admin-order-actions">
-            <Button variant="primary" icon="check" onClick={handleApprove}>Approve & Credit</Button>
-            <Button variant="secondary" icon="close" onClick={handleReject}>Reject Payment</Button>
+          <h2>Admin Review Decision</h2>
+          <Field label="Override Reference (optional)" value={reference} onChange={setReference} placeholder="MANUAL-REF-123" disabled={isApproved || isReversed} />
+          <Field label="Reason / Audit Note (required for reversal)" value={reason} onChange={setReason} placeholder="Enter review note or reversal reason" />
+          {msg && <div className="payment-warning" style={{ marginTop: "1rem" }}><strong>{msg}</strong></div>}
+          <div className="admin-order-actions" style={{ marginTop: "1rem" }}>
+            {!isApproved && !isReversed && (
+              <Button variant="primary" icon="check" onClick={handleApprove}>Approve & Credit Wallet</Button>
+            )}
+            {isApproved && (
+              <Button variant="secondary" icon="close" onClick={() => setShowReverseModal(true)}>Reject & Reverse Payment</Button>
+            )}
+            {!isApproved && !isReversed && (
+              <Button variant="secondary" icon="close" onClick={() => setShowReverseModal(true)}>Reject Payment</Button>
+            )}
           </div>
         </Card>
       </div>
+
+      {showReverseModal && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div style={{ background: "var(--surface-1, #1e293b)", padding: "1.5rem", borderRadius: "12px", maxWidth: "450px", width: "100%", color: "#fff" }}>
+            <h3 style={{ marginTop: 0 }}>Confirm Payment Reversal</h3>
+            <p style={{ color: "var(--muted, #94a3b8)", lineHeight: 1.5 }}>
+              {isApproved
+                ? "Reject this payment and reverse the credited amount from the user's wallet?"
+                : "Reject this payment record?"}
+            </p>
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "1.5rem" }}>
+              <Button variant="secondary" onClick={() => setShowReverseModal(false)}>Cancel</Button>
+              <Button variant="primary" onClick={handleReverseConfirm}>Reject & Reverse</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setShowModal(false)}>

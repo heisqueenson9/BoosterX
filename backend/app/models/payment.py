@@ -6,12 +6,18 @@ from backend.app.utils.datetime import utc_now
 
 class PaymentStatus:
     IDLE = "Idle"
+    PENDING = "Pending"
     UPLOADING = "Uploading"
     VERIFYING = "verifying"
     VERIFIED = "Verified"
+    APPROVED = "Approved"
     REJECTED = "Rejected"
+    DUPLICATE = "Duplicate"
     REVIEW_REQUIRED = "Review Required"
+    NEEDS_REVIEW = "Needs Review"
     EXPIRED = "Expired"
+    ADMIN_REVERSED = "ADMIN_REVERSED"
+    ADMIN_APPROVED = "ADMIN_APPROVED"
 
 class Payment(db.Model):
     __tablename__ = "payments"

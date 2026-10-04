@@ -11,6 +11,8 @@ class LedgerType:
     ORDER_DEBIT = "order_debit"
     REFUND_CREDIT = "refund_credit"
     ADMIN_ADJUSTMENT = "admin_adjustment"
+    ADMIN_REVERSAL = "ADMIN_REVERSAL"
+    ADMIN_MANUAL_CREDIT = "ADMIN_MANUAL_CREDIT"
 
 class LedgerTransaction(db.Model):
     __tablename__ = "ledger_transactions"

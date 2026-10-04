@@ -301,10 +301,21 @@ export const api = {
     return request<{ users: any[]; total: number; page: number; per_page: number }>(`/api/admin/users?${query.toString()}`);
   },
 
+  getAdminUserDetail: async (userId: number) => {
+    return request<{ user: any; payments: any[]; orders: any[] }>(`/api/admin/users/${userId}`);
+  },
+
   updateAdminUserStatus: async (id: number, status: string) => {
     return request<{ message: string }>(`/api/admin/users/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    });
+  },
+
+  adminReversePayment: async (paymentId: string, reason?: string) => {
+    return request<{ message: string }>(`/api/admin/payments/${encodeURIComponent(paymentId)}/reverse`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
     });
   },
 

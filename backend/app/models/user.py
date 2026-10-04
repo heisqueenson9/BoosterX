@@ -13,6 +13,8 @@ class UserRole:
 class UserStatus:
     ACTIVE = "active"
     SUSPENDED = "suspended"
+    DEACTIVATED = "deactivated"
+    DELETED = "deleted"
 
 class User(db.Model):
     __tablename__ = "users"
@@ -26,6 +28,7 @@ class User(db.Model):
     role = db.Column(db.String(20), nullable=False, default=UserRole.CUSTOMER)
     status = db.Column(db.String(20), nullable=False, default=UserStatus.ACTIVE)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    deleted_at = db.Column(db.DateTime, nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True)
     failed_login_attempts = db.Column(db.Integer, nullable=False, default=0)
     locked_until = db.Column(db.DateTime, nullable=True)

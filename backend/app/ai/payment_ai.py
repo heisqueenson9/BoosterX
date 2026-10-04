@@ -41,8 +41,54 @@ class PaymentAI:
         api_url = current_app.config.get("AI_API_URL")
         model = current_app.config.get("AI_MODEL", "gpt-4o-mini")
 
+        verifier_url = current_app.config.get("AI_VERIFIER_URL") or os.environ.get("AI_VERIFIER_URL")
+        verifier_timeout = float(current_app.config.get("AI_VERIFIER_TIMEOUT") or os.environ.get("AI_VERIFIER_TIMEOUT", "20.0"))
+        verifier_enabled = current_app.config.get("AI_VERIFIER_ENABLED", True)
+
         check_name = (original_filename or os.path.basename(image_path)).lower()
-        if not api_key or current_app.config.get("PROVIDER_MODE") == "fake":
+
+        if current_app.config.get("PROVIDER_MODE") == "fake":
+            return PaymentAI._mock_extract(check_name, image_path)
+
+        # Self-hosted Vision AI service (e.g. Qwen3-VL 2B / Ollama verifier)
+        if verifier_url and verifier_enabled:
+            try:
+                with open(image_path, "rb") as f:
+                    encoded_img = base64.b64encode(f.read()).decode("utf-8")
+
+                endpoint = verifier_url.rstrip('/')
+                if not endpoint.endswith("/extract") and not endpoint.endswith("/api/chat"):
+                    endpoint = f"{endpoint}/extract"
+
+                payload = {
+                    "image": encoded_img,
+                    "filename": os.path.basename(image_path)
+                }
+
+                resp = requests.post(endpoint, json=payload, timeout=verifier_timeout)
+                resp.raise_for_status()
+                data = resp.json()
+
+                pay_succ = data.get("payment_successful")
+                status_str = "Successful" if pay_succ is True else ("Failed" if pay_succ is False else data.get("status", "Successful"))
+
+                return PaymentAIExtraction(
+                    amount=float(data["amount"]) if data.get("amount") is not None else None,
+                    currency=data.get("currency", "GHS"),
+                    recipient_name=data.get("recipient_name"),
+                    recipient_number=data.get("recipient_phone") or data.get("recipient_number"),
+                    reference=data.get("transaction_reference") or data.get("reference"),
+                    status=status_str,
+                    datetime=data.get("datetime"),
+                    provider=data.get("network") or data.get("provider"),
+                    confidence=float(data.get("confidence", 0.95)),
+                    integrity_flags=data.get("integrity_flags", [])
+                )
+            except Exception as exc:
+                logger.error(f"Self-hosted AI Verifier error ({verifier_url}): {exc}")
+                raise exc
+
+        if not api_key:
             return PaymentAI._mock_extract(check_name, image_path)
 
         try:
@@ -78,10 +124,7 @@ class PaymentAI:
             return PaymentAIExtraction(**parsed)
         except Exception as exc:
             logger.error(f"AI Vision extraction error: {exc}")
-            return PaymentAIExtraction(
-                confidence=0.0,
-                integrity_flags=["AI_EXTRACTION_FAILED"]
-            )
+            raise exc
 
     @staticmethod
     def _mock_extract(filename: str, image_path: str) -> PaymentAIExtraction:

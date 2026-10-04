@@ -78,11 +78,11 @@ def test_admin_payment_verification_and_rejection(client, app, admin_login):
 
     with app.app_context():
         p_updated = Payment.query.filter_by(payment_id="PAY-TEST-99").first()
-        assert p_updated.status == "Verified"
+        assert p_updated.status in ("Verified", "ADMIN_APPROVED")
         tx = LedgerTransaction.query.filter_by(reference="MANUAL-TX-99").first()
         assert tx is not None
         assert float(tx.amount_ghs) == 50.00
-        action = AdminAction.query.filter_by(action="VERIFY_PAYMENT").first()
+        action = AdminAction.query.filter(AdminAction.action.in_(["VERIFY_PAYMENT", "APPROVE_PAYMENT"])).first()
         assert action is not None
 
 def test_admin_order_actions_and_service_controls(client, app, admin_login):

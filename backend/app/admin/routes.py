@@ -164,61 +164,88 @@ def manual_verify_payment(payment_id: str):
 
     data = request.get_json(silent=True) or {}
     ref_input = data.get("reference") or payment.transaction_reference or f"MANUAL-{payment.payment_id}"
+    reason = data.get("reason", "Approved by administrator review.")
 
-    if payment.status == PaymentStatus.VERIFIED:
-        return jsonify({"error": "Payment is already verified"}), 400
-
-    # Double-spend check on reference
-    existing_tx = LedgerTransaction.query.filter_by(reference=ref_input, status=LedgerStatus.POSTED).first()
-    if existing_tx and existing_tx.payment_id != payment.id:
-        return jsonify({"error": f"Transaction reference '{ref_input}' already used in ledger"}), 400
+    if payment.status in (PaymentStatus.VERIFIED, PaymentStatus.APPROVED, PaymentStatus.ADMIN_APPROVED):
+        return jsonify({"error": "Payment is already approved"}), 400
 
     if not payment.user_id:
         return jsonify({"error": "This payment has no owning account and cannot be credited"}), 400
 
     bal_before = get_owner_balance(payment.user_id)
-    bal_after = bal_before + Decimal(str(payment.amount_ghs))
+    credit_amount = Decimal(str(payment.amount_ghs))
+    bal_after = bal_before + credit_amount
 
     old_status = payment.status
-    payment.status = PaymentStatus.VERIFIED
+    payment.status = PaymentStatus.ADMIN_APPROVED
     payment.transaction_reference = ref_input
 
-    # Insert posted credit
     tx = LedgerTransaction(
         user_id=payment.user_id,
-        type=LedgerType.PAYMENT_CREDIT,
-        amount_ghs=payment.amount_ghs,
+        type=LedgerType.ADMIN_MANUAL_CREDIT,
+        amount_ghs=credit_amount,
         status=LedgerStatus.POSTED,
         reference=ref_input,
-        description=f"Manual Admin verification for {payment.payment_id} ({payment.network})",
+        description=f"Admin manual approval: {reason}",
         balance_before=bal_before,
         balance_after=bal_after
     )
     db.session.add(tx)
 
-    _log_admin_action("VERIFY_PAYMENT", "payment", payment.payment_id, old_val=old_status, new_val=PaymentStatus.VERIFIED)
+    _log_admin_action("APPROVE_PAYMENT", "payment", payment.payment_id, old_val=old_status, new_val=PaymentStatus.ADMIN_APPROVED)
     db.session.commit()
 
-    return jsonify({"message": f"Payment {payment.payment_id} verified successfully. GHS {payment.amount_ghs:.2f} credited."}), 200
+    return jsonify({"message": f"Payment {payment.payment_id} marked as ADMIN_APPROVED. GHS {credit_amount:.2f} credited."}), 200
 
 
+@admin_bp.post("/payments/<payment_id>/reverse")
 @admin_bp.post("/payments/<payment_id>/reject")
-def manual_reject_payment(payment_id: str):
+def manual_reverse_payment(payment_id: str):
     payment = Payment.query.filter_by(payment_id=payment_id).first()
     if not payment:
         return jsonify({"error": "Payment not found"}), 404
 
     data = request.get_json(silent=True) or {}
-    reason = data.get("reason", "Rejected by administrator review.")
+    reason = data.get("reason", "Rejected and reversed by administrator review.")
+
+    if payment.status == PaymentStatus.ADMIN_REVERSED:
+        return jsonify({"error": "Payment is already reversed"}), 400
 
     old_status = payment.status
-    payment.status = PaymentStatus.REJECTED
-    payment.rejection_reason = reason
 
-    _log_admin_action("REJECT_PAYMENT", "payment", payment.payment_id, old_val=old_status, new_val=PaymentStatus.REJECTED)
-    db.session.commit()
+    if old_status in (PaymentStatus.VERIFIED, PaymentStatus.APPROVED, PaymentStatus.ADMIN_APPROVED):
+        if not payment.user_id:
+            return jsonify({"error": "Payment has no owner to reverse funds from"}), 400
 
-    return jsonify({"message": f"Payment {payment.payment_id} marked as rejected."}), 200
+        bal_before = get_owner_balance(payment.user_id)
+        credit_amount = Decimal(str(payment.amount_ghs))
+        bal_after = bal_before - credit_amount
+
+        tx = LedgerTransaction(
+            user_id=payment.user_id,
+            type=LedgerType.ADMIN_REVERSAL,
+            amount_ghs=credit_amount,
+            status=LedgerStatus.POSTED,
+            reference=f"REV-{payment.transaction_reference or payment.payment_id}",
+            description=f"Admin reversal for {payment.payment_id}: {reason}",
+            balance_before=bal_before,
+            balance_after=max(Decimal("0.00"), bal_after)
+        )
+        db.session.add(tx)
+
+        payment.status = PaymentStatus.ADMIN_REVERSED
+        payment.rejection_reason = reason
+
+        _log_admin_action("REVERSE_PAYMENT", "payment", payment.payment_id, old_val=old_status, new_val=PaymentStatus.ADMIN_REVERSED)
+        db.session.commit()
+        return jsonify({"message": f"Payment {payment.payment_id} reversed. GHS {credit_amount:.2f} deducted from user wallet."}), 200
+    else:
+        payment.status = PaymentStatus.REJECTED
+        payment.rejection_reason = reason
+
+        _log_admin_action("REJECT_PAYMENT", "payment", payment.payment_id, old_val=old_status, new_val=PaymentStatus.REJECTED)
+        db.session.commit()
+        return jsonify({"message": f"Payment {payment.payment_id} marked as rejected."}), 200
 
 
 @admin_bp.get("/payments/<payment_id>/screenshot")
@@ -499,6 +526,55 @@ def list_users_admin():
     }), 200
 
 
+@admin_bp.get("/users/<int:user_id>")
+def get_user_detail_admin(user_id: int):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    bal = get_owner_balance(user.id)
+    payments = Payment.query.filter_by(user_id=user.id).order_by(Payment.id.desc()).all()
+    orders = Order.query.filter_by(user_id=user.id).order_by(Order.id.desc()).all()
+
+    return jsonify({
+        "user": {
+            "id": user.id,
+            "public_user_id": user.public_user_id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "phone": user.phone,
+            "role": user.role,
+            "status": user.status,
+            "balance_ghs": f"{bal:.2f}",
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "deleted_at": user.deleted_at.isoformat() if user.deleted_at else None,
+            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None
+        },
+        "payments": [{
+            "id": p.id,
+            "payment_id": p.payment_id,
+            "network": p.network,
+            "amount_ghs": f"{p.amount_ghs:.2f}",
+            "status": p.status,
+            "reference": p.transaction_reference,
+            "screenshot_filename": p.screenshot_filename,
+            "rejection_reason": p.rejection_reason,
+            "created_at": p.created_at.isoformat() if p.created_at else None
+        } for p in payments],
+        "orders": [{
+            "id": o.id,
+            "public_order_id": o.public_order_id,
+            "platform": o.platform,
+            "service_name": o.service_name,
+            "target": o.target,
+            "quantity": o.quantity,
+            "charge_ghs": f"{o.charge_ghs:.2f}",
+            "status": o.status,
+            "created_at": o.created_at.isoformat() if o.created_at else None
+        } for o in orders]
+    }), 200
+
+
 @admin_bp.patch("/users/<int:user_id>")
 def update_user_admin(user_id: int):
     user = db.session.get(User, user_id)
@@ -512,9 +588,17 @@ def update_user_admin(user_id: int):
     old_status = user.status
 
     if "status" in data:
-        new_st = data["status"]
-        if new_st in (UserStatus.ACTIVE, UserStatus.SUSPENDED):
-            user.status = new_st
+        new_st = str(data["status"]).lower()
+        if new_st in ("active", UserStatus.ACTIVE):
+            user.status = UserStatus.ACTIVE
+            user.deleted_at = None
+        elif new_st in ("deactivated", UserStatus.DEACTIVATED):
+            user.status = UserStatus.DEACTIVATED
+        elif new_st in ("deleted", UserStatus.DELETED):
+            user.status = UserStatus.DELETED
+            user.deleted_at = datetime.now(timezone.utc)
+        elif new_st in ("suspended", UserStatus.SUSPENDED):
+            user.status = UserStatus.SUSPENDED
 
     _log_admin_action("UPDATE_USER", "user", user.id, old_val=f"status={old_status}", new_val=f"status={user.status}")
     db.session.commit()
